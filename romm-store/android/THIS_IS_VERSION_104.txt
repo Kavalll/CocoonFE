@@ -1,0 +1,5 @@
+Cocoon RomM Store Android wrapper — version 1.0.4
+
+If Android Studio is open on this folder, you have the 1.0.4 sources.
+MainActivity.kt must contain: R.raw.store and Log.e("RommStore"
+If it still loads file:///android_asset/www/index.html, you are on the old copy.

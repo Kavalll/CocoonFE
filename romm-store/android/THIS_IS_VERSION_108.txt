@@ -1,0 +1,7 @@
+Cocoon RomM Store Android wrapper — version 1.0.8
+
+If Android Studio is open on this folder, you have the 1.0.8 sources.
+Fixes WebView 1.0.7 SyntaxError: Unexpected token '<' caused by String.replace
+treating minified `$&` as a backreference and injecting </body> into the inlined script.
+MainActivity.kt must contain: R.raw.store and Log.e("RommStore"
+If it still loads file:///android_asset/www/index.html, you are on the old copy.

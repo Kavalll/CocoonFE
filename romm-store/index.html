@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#07080d" />
+    <meta name="romm-store-build" content="1.0.8" />
+    <title>Cocoon RomM Store</title>
+    <style>
+      html, body, #app { background: #12141c; color: #f4f1ea; margin: 0; min-height: 100%; }
+      #app { font-family: "Roboto", "Noto Sans", "Segoe UI", sans-serif; padding: 0; }
+    </style>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <script>
+      (function () {
+        if (!window.CocoonRommNative) return;
+        const pending = {};
+        window.__cocoonRommComplete = function (msg) {
+          const job = pending[msg.id];
+          if (!job) return;
+          delete pending[msg.id];
+          if (msg.ok) job.resolve(msg.payload);
+          else job.reject(new Error(msg.payload || "Native bridge failed"));
+        };
+        function call(method, args) {
+          return new Promise(function (resolve, reject) {
+            const id = String(Date.now()) + Math.random().toString(16).slice(2);
+            pending[id] = { resolve: resolve, reject: reject };
+            window.CocoonRommNative[method](id, JSON.stringify(args || {}));
+          });
+        }
+        window.CocoonRomm = {
+          pickRomRoot: function () { return call("pickRomRoot", {}); },
+          getRomRoot: function () { return call("getRomRoot", {}); },
+          listFolders: function () {
+            return call("listFolders", {}).then(function (raw) { return JSON.parse(raw); });
+          },
+          download: function (url, relativePath, authorization) {
+            return call("download", { url: url, relativePath: relativePath, authorization: authorization || "" });
+          },
+          httpRequest: function (args) { return call("httpRequest", args); },
+          getPref: function (key) { return call("getPref", { key: key }); },
+          setPref: function (key, value) { return call("setPref", { key: key, value: value }); },
+          removePref: function (key) { return call("removePref", { key: key }); },
+          fileExists: function (relativePath) {
+            return call("fileExists", { relativePath: relativePath }).then(function (raw) { return raw === "true"; });
+          }
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app">
+      <h1>Cocoon RomM Store</h1>
+      <p>Starting… if this never changes, JavaScript did not run.</p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

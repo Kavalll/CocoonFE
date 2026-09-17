@@ -1,0 +1,6 @@
+Cocoon RomM Store Android wrapper — version 1.0.5
+
+If Android Studio is open on this folder, you have the 1.0.5 sources.
+This build splits platform filtering from game search and sorts consoles newest-first.
+MainActivity.kt must contain: R.raw.store and Log.e("RommStore"
+If it still loads file:///android_asset/www/index.html, you are on the old copy.

@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.CocoonRommStore" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#07080d</item>
+        <item name="android:statusBarColor">#07080d</item>
+        <item name="android:navigationBarColor">#07080d</item>
+    </style>
+</resources>
