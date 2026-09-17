@@ -6,7 +6,7 @@
   "description": "RomM companion for Cocoon: browse your server library and download games into folders Cocoon already scans.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/inline-html.mjs && node scripts/copy-android-assets.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "test": "vitest run"
   },

@@ -1,9 +1,0 @@
-{
-  "name": "Cocoon RomM Store",
-  "short_name": "RomM Store",
-  "start_url": "./",
-  "display": "standalone",
-  "background_color": "#12141c",
-  "theme_color": "#12141c",
-  "description": "Download games from your RomM server into folders Cocoon already scans."
-}

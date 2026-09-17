@@ -2,10 +2,6 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
 import { isFetchBlocked } from "../src/fs";
 import {
   contentDownloadPath,
@@ -15,7 +11,6 @@ import {
   sanitizeFilename,
   type PlatformMapFile,
 } from "../src/map";
-import { normalizeBaseUrl, RommClient } from "../src/api";
 import { normalizeBaseUrl, RommClient } from "../src/api";
 
 const map = JSON.parse(
@@ -110,5 +105,20 @@ describe("browser download fallback", () => {
   it("detects CORS/fetch blocks", () => {
     expect(isFetchBlocked(new TypeError("Failed to fetch"))).toBe(true);
     expect(isFetchBlocked(new Error("Download failed (404)"))).toBe(false);
+  });
+});
+
+describe("android bundle", () => {
+  it("ships a classic-script HTML file with no ES modules", () => {
+    const html = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../android/app/src/main/assets/www/index.html"),
+      "utf8",
+    );
+    expect(html).not.toMatch(/type=["']module["']/);
+    expect(html).not.toMatch(/await fetch\(["']\.\/platform-map\.json/);
+    expect(html).toContain("Cocoon RomM Store");
+    expect(html).toContain("<script>");
+    expect(html).toContain("<style>");
+    expect(html.lastIndexOf("<script>")).toBeGreaterThan(html.lastIndexOf('<div id="app">'));
   });
 });

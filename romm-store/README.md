@@ -49,58 +49,33 @@ npm run dev
 - stream downloads straight into that tree
 - list existing platform folders so alias matching works
 
-Build the web bundle first, copy it into assets, then assemble the APK in Android Studio.
-
-macOS / Linux:
+`npm run build` inlines the UI into a single `index.html` (no ES modules) and copies it into `android/app/src/main/assets/www/`. Do not copy `dist/` by hand; leftover `type="module"` scripts are what made Thor show a blank screen.
 
 ```bash
+cd romm-store
+npm install
 npm run build
-rm -rf android/app/src/main/assets/www
-mkdir -p android/app/src/main/assets/www
-cp -R dist/. android/app/src/main/assets/www/
 ```
 
-Windows Command Prompt:
+Package id: `app.cocoon.rommstore`. Version **1.0.3**.
 
-```bat
-npm run build
-rmdir /s /q android\app\src\main\assets\www
-mkdir android\app\src\main\assets\www
-xcopy /e /i /y dist\* android\app\src\main\assets\www\
-```
-
-Windows PowerShell:
-
-```powershell
-npm run build
-Remove-Item -Recurse -Force android\app\src\main\assets\www -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force -Path android\app\src\main\assets\www | Out-Null
-Copy-Item -Recurse -Force dist\* android\app\src\main\assets\www\
-```
-
-Package id: `app.cocoon.rommstore`.
-
-### Build the APK in Android Studio
+### Run on the Thor from Android Studio (wireless debugging)
 
 Open **this folder**, not the CocoonFE repo root:
 
 `C:\Users\kaval\CocoonFE\romm-store\android`
 
-1. Android Studio → **File → Open** → select the `android` folder → OK.
-2. Click **Trust Project** if asked.
-3. Wait until the bottom status bar says Gradle sync finished. The first time it will download the Android SDK / JDK; that can take several minutes. If a banner says **Sync Now**, click it.
-4. Use the menu **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The hammer icon only compiles; it does not export an installable APK by itself.
-5. When a balloon says **APK(s) generated successfully**, click **locate**.
+1. `git pull` so you have 1.0.3, then run `npm run build` in `romm-store` if `android/app/src/main/assets/www/index.html` is not already updated.
+2. Android Studio → **File → Open** → select the `android` folder → OK. Trust the project if asked.
+3. Wait until Gradle sync finishes. If a banner says **Sync Now**, click it.
+4. Pair wireless debugging as you already have, and select the Thor in the device dropdown.
+5. Uninstall the old **Cocoon RomM Store** on the Thor first (Settings → Apps), so Studio cannot keep serving a cached WebView bundle.
+6. Click **Run** (green triangle), not only the hammer. Studio will install `1.0.3` and open it.
+7. You should see **Connect RomM** immediately. If you do not, open **View → Tool Windows → Logcat**, filter `RommStore`, and look for `boot`, `page finished`, `app text=`, or `WebView error`.
 
-The file is:
+You can still export an APK later with **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The file is `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`.
 
-`romm-store\android\app\build\outputs\apk\debug\app-debug.apk`
-
-Uninstall the old **Cocoon RomM Store** on the Thor (or install over it) after each rebuild. Version 1.0.1 loads the UI through Android's asset loader; 1.0.0 showed a blank white screen because WebView blocked the JavaScript.
-
-Copy that APK to the Thor and install it.
-
-If Build still does nothing, open **View → Tool Windows → Build** and **Gradle**. A failed sync (missing SDK 35, JDK 17, or the wrong folder opened) is the usual cause. Install **SDK Platform 35** and **Android SDK Build-Tools** from **Settings → Languages & Frameworks → Android SDK**.
+If Run or Build does nothing, open **View → Tool Windows → Build** and **Gradle**. A failed sync (missing SDK 35, JDK 17, or the wrong folder opened) is the usual cause. Install **SDK Platform 35** and **Android SDK Build-Tools** from **Settings → Languages & Frameworks → Android SDK**.
 
 ## Token scopes
 

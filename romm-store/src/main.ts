@@ -4,7 +4,6 @@ import { joinDownloadPath, resolveDestination } from "./map";
 import { RommApiError, RommClient, type RommPlatform, type SimpleRom } from "./api";
 import { loadSession, saveSession, romDownloadKey, type StoredSession } from "./storage";
 import {
-  directoryHasFolder,
   listSubfolders,
   nativeBridge,
   pickDirectory,
@@ -13,9 +12,34 @@ import {
   isFetchBlocked,
   writeToDirectory,
 } from "./fs";
+import mapJson from "../platform-map.json";
 
-const app = document.querySelector<HTMLDivElement>("#app")!;
-const map: PlatformMapFile = await fetch("./platform-map.json").then((r) => r.json());
+const map = mapJson as PlatformMapFile;
+let app: HTMLElement;
+
+function bindApp() {
+  app =
+    document.querySelector<HTMLDivElement>("#app") ??
+    document.body.appendChild(Object.assign(document.createElement("div"), { id: "app" }));
+}
+
+console.info("[RommStore] boot");
+
+function notifyNativeReady() {
+  try {
+    const native = (window as Window & { CocoonRommNative?: { uiReady?: () => void } }).CocoonRommNative;
+    native?.uiReady?.();
+  } catch {
+    /* browser preview has no Android bridge */
+  }
+}
+
+function showBootError(reason: unknown) {
+  const message = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason);
+  console.error("[RommStore] boot failed", reason);
+  app.innerHTML = `<h1>RomM store failed to start</h1><p>${escapeHtml(message)}</p>`;
+  notifyNativeReady();
+}
 
 let session: StoredSession = loadSession();
 let client = new RommClient({ baseUrl: session.baseUrl || "https://demo.romm.app", auth: session.auth });
@@ -573,18 +597,38 @@ function render() {
   else if (screen === "detail") renderDetail();
   else if (screen === "games") renderGames();
   else renderPlatforms();
+  notifyNativeReady();
 }
 
-romRoot = await restoreRomRoot();
-await refreshLocalFolders();
-if (session.baseUrl) {
-  try {
-    await connect(session.baseUrl);
-    await loadPlatforms();
-  } catch {
-    screen = "login";
-    render();
-  }
-} else {
+async function start() {
+  console.info("[RommStore] start");
   render();
+  romRoot = await restoreRomRoot();
+  await refreshLocalFolders();
+  if (session.baseUrl) {
+    try {
+      await connect(session.baseUrl);
+      await loadPlatforms();
+    } catch {
+      screen = "login";
+      render();
+    }
+  }
+}
+
+function boot() {
+  bindApp();
+  window.addEventListener("error", (event) => {
+    showBootError(event.error ?? event.message);
+  });
+  window.addEventListener("unhandledrejection", (event) => {
+    showBootError(event.reason);
+  });
+  void start().catch(showBootError);
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", boot);
+} else {
+  boot();
 }

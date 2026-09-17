@@ -15,5 +15,17 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    cssCodeSplit: false,
+    modulePreload: false,
+    target: "es2018",
+    assetsInlineLimit: 100_000_000,
+    rollupOptions: {
+      output: {
+        format: "iife",
+        inlineDynamicImports: true,
+        entryFileNames: "assets/store.js",
+        assetFileNames: "assets/[name][extname]",
+      },
+    },
   },
 });

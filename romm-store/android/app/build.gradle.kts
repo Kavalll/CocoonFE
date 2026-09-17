@@ -11,8 +11,8 @@ android {
         applicationId = "app.cocoon.rommstore"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 4
+        versionName = "1.0.3"
     }
 
     buildTypes {
@@ -38,5 +38,4 @@ android {
 dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
-    implementation("androidx.webkit:webkit:1.12.1")
 }

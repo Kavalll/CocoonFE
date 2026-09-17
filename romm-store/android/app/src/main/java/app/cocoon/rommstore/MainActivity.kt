@@ -5,17 +5,22 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
+import android.view.View
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
-import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.documentfile.provider.DocumentFile
-import androidx.webkit.WebViewAssetLoader
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStream
@@ -25,17 +30,13 @@ import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
+    private lateinit var statusView: TextView
     private val io = Executors.newSingleThreadExecutor()
     private val prefs by lazy { getSharedPreferences("rommstore", MODE_PRIVATE) }
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private var uiReady = false
 
     private var pendingPickId: String? = null
-
-    private val assetLoader by lazy {
-        WebViewAssetLoader.Builder()
-            .setDomain("appassets.androidplatform.net")
-            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
-            .build()
-    }
 
     private val openTree = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -57,31 +58,95 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        webView = WebView(this)
+        setContentView(R.layout.activity_main)
+        webView = findViewById(R.id.storeWebView)
+        statusView = findViewById(R.id.storeStatus)
         webView.setBackgroundColor(Color.parseColor("#12141c"))
-        setContentView(webView)
 
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        webView.settings.allowFileAccess = true
-        webView.settings.allowContentAccess = true
-        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
-        webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-        webView.webChromeClient = WebChromeClient()
+        @Suppress("DEPRECATION")
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            databaseEnabled = true
+            allowFileAccess = true
+            allowContentAccess = true
+            allowFileAccessFromFileURLs = true
+            allowUniversalAccessFromFileURLs = true
+            cacheMode = WebSettings.LOAD_NO_CACHE
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+            mediaPlaybackRequiresUserGesture = false
+        }
+        WebView.setWebContentsDebuggingEnabled(true)
+        webView.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                Log.e(
+                    "RommStore",
+                    "${consoleMessage.messageLevel()} ${consoleMessage.message()} (${consoleMessage.sourceId()}:${consoleMessage.lineNumber()})",
+                )
+                return true
+            }
+        }
         webView.webViewClient = object : WebViewClient() {
-            override fun shouldInterceptRequest(
+            override fun onReceivedError(
                 view: WebView,
                 request: WebResourceRequest,
-            ): WebResourceResponse? {
-                return assetLoader.shouldInterceptRequest(request.url)
+                error: WebResourceError,
+            ) {
+                val message = "WebView error ${error.errorCode} ${error.description} ${request.url}"
+                Log.e("RommStore", message)
+                if (request.isForMainFrame) {
+                    showNativeError(message)
+                }
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
+                Log.e("RommStore", "page finished $url")
                 injectBridge()
+                view?.evaluateJavascript(
+                    "(function(){var el=document.getElementById('app');return el?el.innerText.slice(0,240):'no #app';})()",
+                ) { text ->
+                    Log.e("RommStore", "app text=$text")
+                    if (text != null && text != "\"no #app\"" && text != "null") {
+                        statusView.visibility = View.GONE
+                    }
+                    if (text != null && (text.contains("Connect RomM") || text.contains("failed to start"))) {
+                        markUiReady()
+                    }
+                }
             }
         }
         webView.addJavascriptInterface(Bridge(), "CocoonRommNative")
-        webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
+        loadBundledUi()
+        mainHandler.postDelayed({
+            if (!uiReady) {
+                showNativeError(
+                    "The store page did not start. In Android Studio Logcat, filter by RommStore and look for red lines.",
+                )
+            }
+        }, 4000)
+    }
+
+    private fun loadBundledUi() {
+        val html = assets.open("www/index.html").bufferedReader(Charsets.UTF_8).use { it.readText() }
+        Log.e("RommStore", "loading bundled UI (${html.length} chars, file:///android_asset/www/index.html)")
+        if (html.isBlank()) {
+            showNativeError("Bundled index.html is empty.")
+            return
+        }
+        if (html.contains("type=\"module\"") || html.contains("type='module'")) {
+            Log.e("RommStore", "bundled HTML still uses ES modules; WebView will stay blank")
+        }
+        webView.loadUrl("file:///android_asset/www/index.html")
+    }
+
+    private fun markUiReady() {
+        uiReady = true
+        statusView.visibility = View.GONE
+    }
+
+    private fun showNativeError(message: String) {
+        statusView.visibility = View.VISIBLE
+        statusView.text = message
     }
 
     private fun romRootUri(): Uri? = prefs.getString("romRoot", null)?.let(Uri::parse)
@@ -163,6 +228,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     inner class Bridge {
+        @JavascriptInterface
+        fun uiReady() {
+            runOnUiThread { markUiReady() }
+        }
+
         @JavascriptInterface
         fun pickRomRoot(id: String, @Suppress("UNUSED_PARAMETER") args: String) {
             pendingPickId = id
