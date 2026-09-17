@@ -96,6 +96,8 @@ The file is:
 
 `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`
 
+Uninstall the old **Cocoon RomM Store** on the Thor (or install over it) after each rebuild. Version 1.0.1 loads the UI through Android's asset loader; 1.0.0 showed a blank white screen because WebView blocked the JavaScript.
+
 Copy that APK to the Thor and install it.
 
 If Build still does nothing, open **View → Tool Windows → Build** and **Gradle**. A failed sync (missing SDK 35, JDK 17, or the wrong folder opened) is the usual cause. Install **SDK Platform 35** and **Android SDK Build-Tools** from **Settings → Languages & Frameworks → Android SDK**.
