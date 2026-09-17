@@ -640,7 +640,7 @@ function renderDetail() {
   app.innerHTML = shell(
     rom.name || rom.fs_name_no_tags,
     `
-    <article class="detail">
+    <article class="game-detail">
       <div class="art" ${coverStyle(client.coverUrl(rom))}></div>
       <div class="copy">
         <h2>${escapeHtml(rom.name || rom.fs_name_no_tags)}</h2>

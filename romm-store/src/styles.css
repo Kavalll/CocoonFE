@@ -250,9 +250,9 @@ input, select {
   pointer-events: none;
 }
 .card .art .badge { position: relative; z-index: 1; }
-.card .meta, .detail .copy { padding: 0.65rem 0.75rem 0.8rem; }
-.card .meta h3, .detail h2 { margin: 0 0 0.2rem; font-size: 0.95rem; line-height: 1.25; }
-.card .meta p, .muted, .detail p { margin: 0; color: var(--muted); font-size: 0.8rem; }
+.card .meta, .game-detail .copy { padding: 0.65rem 0.75rem 0.8rem; }
+.card .meta h3, .game-detail h2 { margin: 0 0 0.2rem; font-size: 0.95rem; line-height: 1.25; }
+.card .meta p, .muted, .game-detail p { margin: 0; color: var(--muted); font-size: 0.8rem; }
 .badge {
   display: inline-block;
   background: rgba(8, 10, 16, 0.82);
@@ -279,18 +279,19 @@ input, select {
 .row { display: flex; gap: 0.55rem; flex-wrap: wrap; }
 .row.actions { margin: 0.85rem 0 0; }
 .row.actions button { flex: 1; min-width: 140px; }
-.detail {
+.game-detail {
   display: grid;
-  grid-template-columns: minmax(180px, 280px) 1fr;
+  grid-template-columns: minmax(180px, 280px) minmax(0, 1fr);
   gap: 0;
+  width: 100%;
   background: var(--bg-raise);
   border: 1px solid var(--line);
   border-radius: 22px;
   overflow: hidden;
   box-shadow: var(--shadow);
 }
-.detail .art { min-height: 280px; background: #0e121b center/cover no-repeat; }
-.detail .copy { padding: 1rem 1.1rem 1.15rem; }
+.game-detail .art { min-height: 280px; background: #0e121b center/cover no-repeat; }
+.game-detail .copy { padding: 1rem 1.1rem 1.15rem; min-width: 0; }
 .progress {
   height: 10px;
   background: #0c0f16;
@@ -340,7 +341,7 @@ input, select {
 .skeleton .sk-line.short { width: 55%; }
 .shell.is-entering .card,
 .shell.is-entering .panel,
-.shell.is-entering .detail,
+.shell.is-entering .game-detail,
 .shell.is-entering .empty {
   animation: rise 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
@@ -368,8 +369,8 @@ input, select {
 
 /* Phone / Thor portrait: two fat columns, dock stays thumb-reachable */
 @media (max-width: 720px) {
-  .detail { grid-template-columns: 1fr; }
-  .detail .art { min-height: 220px; }
+  .game-detail { grid-template-columns: 1fr; }
+  .game-detail .art { min-height: 220px; }
   .search-wrap, .search { width: 100%; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -391,7 +392,7 @@ input, select {
   .card .meta p { font-size: 0.68rem; }
   .dock { padding: 0.4rem 0.55rem calc(0.4rem + env(safe-area-inset-bottom)); gap: 0.4rem; }
   .panel { padding: 0.85rem; }
-  .detail .art { min-height: 180px; }
+  .game-detail .art { min-height: 180px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
