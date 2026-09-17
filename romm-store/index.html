@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#12141c" />
+    <title>Cocoon RomM Store</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <script>
+      (function () {
+        if (!window.CocoonRommNative) return;
+        const pending = {};
+        window.__cocoonRommComplete = function (msg) {
+          const job = pending[msg.id];
+          if (!job) return;
+          delete pending[msg.id];
+          if (msg.ok) job.resolve(msg.payload);
+          else job.reject(new Error(msg.payload || "Native bridge failed"));
+        };
+        function call(method, args) {
+          return new Promise(function (resolve, reject) {
+            const id = String(Date.now()) + Math.random().toString(16).slice(2);
+            pending[id] = { resolve: resolve, reject: reject };
+            window.CocoonRommNative[method](id, JSON.stringify(args || {}));
+          });
+        }
+        window.CocoonRomm = {
+          pickRomRoot: function () { return call("pickRomRoot", {}); },
+          getRomRoot: function () { return call("getRomRoot", {}); },
+          listFolders: function () {
+            return call("listFolders", {}).then(function (raw) { return JSON.parse(raw); });
+          },
+          download: function (url, relativePath, authorization) {
+            return call("download", { url: url, relativePath: relativePath, authorization: authorization || "" });
+          },
+          fileExists: function (relativePath) {
+            return call("fileExists", { relativePath: relativePath }).then(function (raw) { return raw === "true"; });
+          }
+        };
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

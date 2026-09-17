@@ -82,6 +82,12 @@ The setup wizard walks you through everything you need to get up and running.
 
 See the [Cocoon Wiki](https://cocoon-shell.com/wiki/) for setup guides. The complete platform list is available in [platforms/index.json](platforms/index.json).
 
+## RomM downloads
+
+Cocoon's launcher source is not in this repository, so RomM cannot be wired into the home screen itself. Official in-app RomM support is still on the Cocoon roadmap.
+
+Until that ships, use **[romm-store](romm-store/README.md)** — a companion you pin to the Cocoon dock. It talks to the RomM server you already run and downloads games into the platform folders Cocoon already scans, so you do not need Argosy as a second launcher.
+
 ## Resources
 
 - [Cocoon website](https://cocoon-shell.com/)
