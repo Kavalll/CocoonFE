@@ -50,7 +50,7 @@ npm run dev
 - stream downloads straight into that tree
 - list existing platform folders so alias matching works
 
-`npm run build` inlines the UI into a single `index.html` (no ES modules) and copies it into `android/app/src/main/assets/www/`. Do not copy `dist/` by hand; leftover `type="module"` scripts are what made Thor show a blank screen.
+`npm run build` inlines the UI into a single `index.html` (no ES modules) and copies it into `android/app/src/main/assets/www/` and `res/raw/store.html`. Do not copy `dist/` by hand; leftover `type="module"` scripts are what made Thor show a blank screen.
 
 ```bash
 cd romm-store
@@ -58,50 +58,72 @@ npm install
 npm run build
 ```
 
-Package id: `app.cocoon.rommstore`. Version **1.0.5**. Launcher name: **RomM Store 1.0.5**.
+Package id: `app.cocoon.rommstore`. Version **1.0.6**. Launcher name: **RomM Store 1.0.6**.
 
-This lives on the PR branch `cursor/romm-store-companion-7dfa`, not `main`. If you `git pull` on `main` you will keep the old white-screen APK.
+This lives on the PR branch `cursor/romm-store-companion-7dfa`, not `main`. If you `git pull` on `main` you will keep an old APK.
+
+## Install 1.0.6 on an AYN Thor
+
+Uninstall whatever is already named Cocoon RomM Store / RomM Store first. Android will keep serving the old WebView bundle if you just hit Run over the top of 1.0.0–1.0.5.
+
+### Option A — download the CI APK (fastest)
+
+1. On a PC, open https://github.com/Kavalll/CocoonFE/pull/1
+2. Wait until the **RomM Store APK** check is green on the latest commit.
+3. Click **Checks / Actions** → **RomM Store APK** → artifact **CocoonRommStore-debug** → download the zip.
+4. Unzip. Copy `app-debug.apk` to the Thor (USB, Syncthing, or a shared folder).
+5. On the Thor: Settings → Apps → **RomM Store** / **Cocoon RomM Store** → Uninstall.
+6. Open the APK (Files app) and install. Allow unknown sources if Android asks.
+7. The launcher icon must say **RomM Store 1.0.6**. If it does not, you installed an older file.
+
+### Option B — git pull and Run from Android Studio
+
+On **Windows cmd** (not Git Bash, unless you know that environment):
 
 ```bat
 cd C:\Users\kaval\CocoonFE
 git fetch origin
 git checkout cursor/romm-store-companion-7dfa
+git restore romm-store/android/app/src/main/assets/www
+git restore romm-store/package-lock.json
+git clean -fd romm-store/android/gradle romm-store/android/gradlew romm-store/android/gradlew.bat
+del romm-store\android\gradlew 2>nul
+del romm-store\android\gradlew.bat 2>nul
 git pull origin cursor/romm-store-companion-7dfa
 git log -1 --oneline
 ```
 
-If `git pull` refuses to update, Android Studio copied the old `index-dSIPXYpo.js` files and those local changes block the merge. Discard them, then pull:
+`git log -1` should mention the 1.0.6 handheld UI. Confirm this file exists:
+
+`C:\Users\kaval\CocoonFE\romm-store\android\THIS_IS_VERSION_106.txt`
+
+If `git pull` still refuses, Android Studio has leftover hashed JS. Discard it:
 
 ```bat
 cd C:\Users\kaval\CocoonFE
 git restore romm-store/android/app/src/main/assets/www
-git clean -fd romm-store/android/gradle romm-store/android/gradlew romm-store/android/gradlew.bat
+git clean -fd romm-store/android/app/src/main/assets/www
 git pull origin cursor/romm-store-companion-7dfa
 ```
 
-Easiest install: open the GitHub PR → **Checks / Actions** → **RomM Store APK** → download `CocoonRommStore-debug` → copy `app-debug.apk` to the Thor and install it. Uninstall the old app first. The launcher icon will say **RomM Store 1.0.5**.
+Then in Android Studio:
 
-### Run on the Thor from Android Studio (wireless debugging)
+1. **File → Open** the folder `C:\Users\kaval\CocoonFE\romm-store\android` — not the CocoonFE repo root.
+2. If it says **Incompatible Gradle JVM** (8.9 vs JVM 25): **Apply compatible Gradle JDK configuration and sync**, or **Settings → Build Tools → Gradle → Gradle JDK → 17** (Temurin 17 is fine). Do not stay on JDK 25.
+3. **File → Sync Project with Gradle Files**, then **Build → Clean Project**.
+4. Enable **Wireless debugging** on the Thor, pair it in Studio.
+5. Uninstall **RomM Store** on the Thor.
+6. Click **Run** (green triangle), not the hammer. The hammer does not install.
+7. You should get a toast **RomM Store 1.0.6**, then **Connect RomM**.
+8. Logcat filter `RommStore` must include `boot 1.0.6 raw/store.html`. It must **not** mention `index-dSIPXYpo.js`.
 
-Logcat that mentions `index-dSIPXYpo.js` and never `RommStore` is still the **old APK**. Studio did not build this folder.
+Export an APK instead with **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The file is `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`. Copy that to the Thor.
 
-Open **this folder**, not the CocoonFE repo root:
-
-`C:\Users\kaval\CocoonFE\romm-store\android`
-
-1. Confirm `THIS_IS_VERSION_105.txt` is in that folder.
-2. **File → Sync Project with Gradle Files**, then **Build → Clean Project**.
-3. Uninstall **Cocoon RomM Store** on the Thor.
-4. **Run**. You should get a toast **RomM Store 1.0.5**, then **Connect RomM**.
-5. Logcat filter `RommStore` must include `boot 1.0.5 raw/store.html`. It must **not** mention `index-dSIPXYpo.js`.
-
-If the launcher still says **Cocoon RomM Store** without 1.0.5, the new APK did not install.
-
-You can still export an APK with **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The file is `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`.
-
-If Android Studio says **Incompatible Gradle JVM version** (Gradle 8.9 vs JVM 25), do **not** keep JDK 25. Click **Apply compatible Gradle JDK configuration and sync**. If that is missing: **File → Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK** → pick **17** (or **jbr-17** / **21**). Use **Download JDK** → version **17** → Eclipse Temurin if 17 is not listed. Then Sync.
+If the launcher still says **Cocoon RomM Store** without **1.0.6**, the new APK did not install.
 
 If Run or Build does nothing, open **View → Tool Windows → Build** and **Gradle**. Install **SDK Platform 35** and **Android SDK Build-Tools** from **Settings → Languages & Frameworks → Android SDK**.
+
+After it launches: enter your RomM URL (Tailscale URL is fine), sign in or browse, **Settings → Choose ROM root folder**, pick the same ROM root Cocoon scans, download a game, then rescan that platform in Cocoon. Pin **RomM Store 1.0.6** to the Cocoon dock.
 
 ## Token scopes
 

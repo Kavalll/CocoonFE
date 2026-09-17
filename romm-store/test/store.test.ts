@@ -168,7 +168,8 @@ describe("android bundle", () => {
     expect(html).not.toMatch(/await fetch\(["']\.\/platform-map\.json/);
     expect(html).toContain("Cocoon RomM Store");
     expect(html).toContain('name="romm-store-build"');
-    expect(html).toContain("1.0.5");
+    expect(html).toContain("1.0.6");
+    expect(html).toContain("Handheld controls");
     expect(html).toContain("<script>");
     expect(html).toContain("<style>");
     expect(html.lastIndexOf("<script>")).toBeGreaterThan(html.lastIndexOf('<div id="app">'));

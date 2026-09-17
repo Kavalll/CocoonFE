@@ -1,0 +1,6 @@
+Cocoon RomM Store Android wrapper — version 1.0.6
+
+If Android Studio is open on this folder, you have the 1.0.6 sources.
+Handheld dock UI, animations, Thor-sized tap targets.
+MainActivity.kt must contain: R.raw.store and Log.e("RommStore"
+If it still loads file:///android_asset/www/index.html, you are on the old copy.

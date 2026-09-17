@@ -29,6 +29,7 @@ function bindApp() {
   app =
     document.querySelector<HTMLDivElement>("#app") ??
     document.body.appendChild(Object.assign(document.createElement("div"), { id: "app" }));
+  app.classList.add("app");
 }
 
 console.info("[RommStore] boot");
@@ -72,6 +73,7 @@ let status = "";
 let error = "";
 let downloadPct = 0;
 let busy = false;
+let renderedScreen = "";
 
 const HANDLE_DB = "cocoon-romm-store";
 
@@ -163,6 +165,7 @@ async function connect(baseUrl: string) {
 async function loadPlatforms() {
   busy = true;
   error = "";
+  screen = "platforms";
   render();
   try {
     await refreshLocalFolders();
@@ -179,6 +182,7 @@ async function loadPlatforms() {
 
 async function loadGames(reset = true) {
   if (!currentPlatform) return;
+  screen = "games";
   if (reset) {
     roms = [];
     romOffset = 0;
@@ -293,7 +297,7 @@ function searchValue(): string {
 
 function searchPlaceholder(): string {
   if (screen === "games" || screen === "detail") {
-    return `Search games on ${platformDisplayName(currentPlatform ?? {})}`;
+    return `Search ${platformDisplayName(currentPlatform ?? {})} games`;
   }
   return "Filter platforms";
 }
@@ -301,38 +305,112 @@ function searchPlaceholder(): string {
 function searchHint(): string {
   if (screen === "platforms") {
     return platformQuery.trim()
-      ? "Filtering consoles only. Open a platform to browse its games — this text is not a game search."
-      : "Filter consoles by name. Open one, then search game titles.";
+      ? "Filtering consoles only — this is not a game search."
+      : "Filter consoles, then open one to search games.";
   }
-  if (screen === "games" || screen === "detail") {
+  if (screen === "games") {
     return gameQuery.trim()
-      ? `Showing ${platformDisplayName(currentPlatform ?? {})} games matching this title.`
+      ? `Searching ${platformDisplayName(currentPlatform ?? {})} titles.`
       : "Search game titles on this platform only.";
   }
   return "";
 }
 
-function topbar(subtitle: string) {
-  const showSearch = screen === "platforms" || screen === "games" || screen === "detail";
-  const query = searchValue();
+function tapPulse() {
+  try {
+    navigator.vibrate?.(12);
+  } catch {
+    /* desktop / denied */
+  }
+}
+
+const LOGO_SVG = `<svg class="logo" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="12" fill="none"/><path d="M9 24V12h7.2c2.8 0 4.6 1.6 4.6 4s-1.8 4-4.6 4H13v4H9zm4-7h2.8c1.1 0 1.8-.6 1.8-1.5S16.9 14 15.8 14H13v3zm13.2 7.2c-3.1 0-5-1.9-5-5.2 0-3.3 2-5.2 5-5.2 1.8 0 3.2.7 4 1.9l-2.4 1.5c-.4-.6-1.1-1-1.7-1-1.3 0-2.1 1.1-2.1 2.8s.8 2.8 2.1 2.8c.7 0 1.4-.4 1.8-1l2.4 1.4c-.8 1.3-2.3 2-4.1 2z" fill="currentColor"/></svg>`;
+
+function masthead(subtitle: string) {
+  const count =
+    screen === "platforms" && platforms.length
+      ? `${filterPlatforms(platforms, platformQuery).length} consoles`
+      : screen === "games"
+        ? `${roms.length}${romTotal ? ` / ${romTotal}` : ""} games`
+        : busy
+          ? "Loading…"
+          : "";
   return `
-    <header class="topbar">
+    <header class="masthead">
       <div class="brand">
-        <strong>Cocoon RomM Store</strong>
-        <span>${subtitle}</span>
-      </div>
-      ${showSearch ? `
-        <div class="search-wrap">
-          <div class="search-row">
-            <input class="search" id="search" type="search" enterkeyhint="search" placeholder="${escapeHtml(searchPlaceholder())}" value="${escapeHtml(query)}" />
-            ${query ? `<button class="ghost icon" id="clear-search" type="button" aria-label="Clear search">Clear</button>` : ""}
-            ${screen === "games" || screen === "detail" ? `<button class="primary icon" id="run-search" type="button">Search</button>` : ""}
-          </div>
-          <p class="search-hint">${escapeHtml(searchHint())}</p>
+        ${LOGO_SVG}
+        <div class="titles">
+          <strong>RomM Store</strong>
+          <span class="crumb">${escapeHtml(subtitle)}</span>
         </div>
-      ` : ""}
-      ${screen !== "login" ? `<button class="ghost" data-go="settings">Settings</button>` : ""}
+      </div>
+      ${count ? `<span class="pill">${escapeHtml(count)}</span>` : ""}
     </header>
+  `;
+}
+
+function searchDock() {
+  const query = searchValue();
+  const showSearch = screen === "platforms" || screen === "games";
+  if (!showSearch) return "";
+  return `
+    <div class="search-wrap">
+      <div class="search-row">
+        <input class="search" id="search" type="search" enterkeyhint="search" autocapitalize="off" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(searchPlaceholder())}" value="${escapeHtml(query)}" />
+        ${query ? `<button class="ghost icon" id="clear-search" type="button" aria-label="Clear search">Clear</button>` : ""}
+        ${screen === "games" ? `<button class="primary icon" id="run-search" type="button">Search</button>` : ""}
+      </div>
+      <p class="search-hint">${escapeHtml(searchHint())}</p>
+    </div>
+  `;
+}
+
+function dock() {
+  if (screen === "login") return "";
+  const back =
+    screen === "games" || screen === "settings"
+      ? `<button class="ghost icon" data-go="platforms" type="button">Back</button>`
+      : screen === "detail"
+        ? `<button class="ghost icon" data-go="games" type="button">Back</button>`
+        : "";
+  const extra =
+    screen === "detail"
+      ? `<button class="primary wide" id="download" type="button" ${busy ? "disabled" : ""}>${selectedRom && downloaded(selectedRom) ? "Download again" : "Download"}</button>`
+      : searchDock();
+  const settings =
+    screen === "platforms" || screen === "games"
+      ? `<button class="ghost icon" data-go="settings" type="button">Settings</button>`
+      : "";
+  return `
+    <nav class="dock" aria-label="Handheld controls">
+      ${back}
+      ${extra}
+      ${settings}
+    </nav>
+  `;
+}
+
+function skeletonGrid(count = 8): string {
+  return `<div class="grid" aria-hidden="true">${Array.from({ length: count }, () => `
+    <div class="card skeleton">
+      <div class="art"></div>
+      <div class="meta"><span class="sk-line"></span><span class="sk-line short"></span></div>
+    </div>`).join("")}</div>`;
+}
+
+function shell(subtitle: string, body: string) {
+  const entering = renderedScreen !== screen ? "is-entering" : "";
+  renderedScreen = screen;
+  return `
+    <div class="shell ${screen} ${busy ? "is-busy" : ""} ${entering}">
+      <div class="busybar"></div>
+      ${masthead(subtitle)}
+      <main class="stage">
+        ${error && screen !== "login" ? `<p class="banner">${escapeHtml(error)}</p>` : ""}
+        ${body}
+      </main>
+      ${dock()}
+    </div>
   `;
 }
 
@@ -365,14 +443,15 @@ function coverStyle(url: string | null): string {
 }
 
 function renderLogin() {
-  app.innerHTML = `
-    ${topbar("Connect the RomM server you already have running.")}
+  app.innerHTML = shell(
+    "Connect the RomM server you already have running.",
+    `
     <section class="panel">
       <h1>Connect RomM</h1>
-      <p class="muted">Cocoon itself is closed source, so this companion lives in the dock and writes games into the same platform folders Cocoon scans.</p>
+      <p class="muted">Pin this store to the Cocoon dock. It writes games into the same platform folders Cocoon already scans.</p>
       <div class="field">
         <label for="baseUrl">RomM URL</label>
-        <input id="baseUrl" value="${escapeHtml(session.baseUrl || "https://demo.romm.app")}" placeholder="https://romm.example.com" />
+        <input id="baseUrl" inputmode="url" autocapitalize="off" value="${escapeHtml(session.baseUrl || "https://demo.romm.app")}" placeholder="https://romm.example.com" />
       </div>
       <div class="field">
         <label for="username">Username</label>
@@ -383,17 +462,18 @@ function renderLogin() {
         <input id="password" type="password" autocomplete="current-password" />
       </div>
       <div class="field">
-        <label for="token">Or paste a client token / 8-digit pairing code</label>
-        <input id="token" placeholder="rmm_… or 12345678" />
+        <label for="token">Client token or 8-digit pairing code</label>
+        <input id="token" autocapitalize="off" placeholder="rmm_… or 12345678" />
       </div>
-      <div class="row">
+      <div class="row actions">
         <button class="primary" id="connect">Connect</button>
         <button class="ghost" id="kiosk">Browse without login</button>
       </div>
-      ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
+      ${error ? `<p class="banner">${escapeHtml(error)}</p>` : ""}
       ${busy ? `<p class="muted">Connecting…</p>` : ""}
     </section>
-  `;
+    `,
+  );
   app.querySelector("#connect")?.addEventListener("click", onConnect);
   app.querySelector("#kiosk")?.addEventListener("click", onKiosk);
 }
@@ -474,9 +554,10 @@ function mappingBadge(slug: string, fsSlug: string): string {
 
 function renderPlatforms() {
   const visible = filterPlatforms(platforms, platformQuery);
-  app.innerHTML = `
-    ${topbar(session.baseUrl || "Not connected")}
-    ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
+  const body =
+    busy && platforms.length === 0
+      ? skeletonGrid(10)
+      : `
     <div class="grid">
       ${visible.map((platform) => {
         const year = platformReleaseYear(map, platform);
@@ -494,26 +575,28 @@ function renderPlatforms() {
       }).join("")}
     </div>
     ${platforms.length === 0 && !busy ? `<p class="empty">No platforms came back from RomM.</p>` : ""}
-    ${platforms.length > 0 && visible.length === 0 ? `<p class="empty">No platforms match “${escapeHtml(platformQuery.trim())}”. Clear the filter to see every console, newest generation first.</p>` : ""}
+    ${platforms.length > 0 && visible.length === 0 ? `<p class="empty">No platforms match “${escapeHtml(platformQuery.trim())}”. Clear the filter to see every console, newest first.</p>` : ""}
   `;
+  app.innerHTML = shell(session.baseUrl || "Not connected", body);
   bindChrome();
   app.querySelectorAll<HTMLButtonElement>("[data-platform]").forEach((button) => {
     button.addEventListener("click", () => {
       const match = platforms.find((p) => String(p.id) === button.dataset.platform) ?? null;
-      if (match) openPlatform(match);
+      if (match) {
+        tapPulse();
+        openPlatform(match);
+      }
     });
   });
 }
 
 function renderGames() {
   const title = currentPlatform?.display_name || currentPlatform?.name || "Games";
-  app.innerHTML = `
-    ${topbar(title)}
-    <div class="row" style="margin-bottom:1rem">
-      <button class="ghost" data-go="platforms">All platforms</button>
-      <span class="muted">${roms.length} of ${romTotal || roms.length}</span>
-    </div>
-    ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
+  const body =
+    busy && roms.length === 0
+      ? skeletonGrid(10)
+      : `
+    ${!busy ? `<div class="toolbar"><span class="muted">${roms.length} of ${romTotal || roms.length}</span></div>` : ""}
     <div class="grid">
       ${roms.map((rom) => `
         <button class="card" data-rom="${rom.id}">
@@ -527,21 +610,19 @@ function renderGames() {
         </button>
       `).join("")}
     </div>
-    ${roms.length < romTotal ? `<div class="row" style="margin-top:1rem"><button id="more">Load more</button></div>` : ""}
+    ${roms.length < romTotal ? `<div class="row actions" style="margin-top:1rem"><button class="primary wide" id="more">Load more</button></div>` : ""}
     ${roms.length === 0 && !busy && gameQuery.trim() ? `<p class="empty">No ${escapeHtml(title)} games match “${escapeHtml(gameQuery.trim())}”. Clear search to see every game on this platform.</p>` : ""}
     ${roms.length === 0 && !busy && !gameQuery.trim() ? `<p class="empty">No games on this platform.</p>` : ""}
   `;
+  app.innerHTML = shell(title, body);
   bindChrome();
-  app.querySelector("[data-go='platforms']")?.addEventListener("click", () => {
-    screen = "platforms";
-    render();
-  });
   app.querySelector("#more")?.addEventListener("click", () => void loadGames(false));
   app.querySelectorAll<HTMLButtonElement>("[data-rom]").forEach((button) => {
     button.addEventListener("click", () => {
       selectedRom = roms.find((rom) => String(rom.id) === button.dataset.rom) ?? null;
       status = "";
       downloadPct = 0;
+      tapPulse();
       screen = "detail";
       render();
     });
@@ -556,11 +637,9 @@ function renderDetail() {
   }
   const rom = selectedRom;
   const dest = destinationFor(rom);
-  app.innerHTML = `
-    ${topbar(rom.name || rom.fs_name_no_tags)}
-    <div class="row" style="margin-bottom:1rem">
-      <button class="ghost" data-go="games">Back</button>
-    </div>
+  app.innerHTML = shell(
+    rom.name || rom.fs_name_no_tags,
+    `
     <article class="detail">
       <div class="art" ${coverStyle(client.coverUrl(rom))}></div>
       <div class="copy">
@@ -570,24 +649,17 @@ function renderDetail() {
         <p style="margin-top:.8rem">Cocoon folder: <strong>${escapeHtml(dest.folderName)}</strong> ${dest.mapped ? "" : "(no platform map; using RomM slug)"}</p>
         <div class="progress"><span style="width:${downloadPct}%"></span></div>
         ${status ? `<p class="muted">${escapeHtml(status)}</p>` : ""}
-        ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
-        <div class="row" style="margin-top:1rem">
-          <button class="primary" id="download" ${busy ? "disabled" : ""}>${downloaded(rom) ? "Download again" : "Download to Cocoon"}</button>
-        </div>
       </div>
     </article>
-  `;
+    `,
+  );
   bindChrome();
-  app.querySelector("[data-go='games']")?.addEventListener("click", () => {
-    screen = "games";
-    render();
-  });
-  app.querySelector("#download")?.addEventListener("click", () => void downloadRom(rom));
 }
 
 function renderSettings() {
-  app.innerHTML = `
-    ${topbar("Settings")}
+  app.innerHTML = shell(
+    "Settings",
+    `
     <section class="panel">
       <div class="field">
         <label for="layout">Folder layout</label>
@@ -597,16 +669,15 @@ function renderSettings() {
           <option value="alias" ${session.layout === "alias" ? "selected" : ""}>Match folders that already exist</option>
         </select>
       </div>
-      <p class="muted">Point this app at the same ROM root Cocoon scans. Games are saved into a per-platform subfolder, then show up after a library rescan.</p>
-      <div class="row">
+      <p class="muted">Point this app at the same ROM root Cocoon scans. Games land in a per-platform folder, then show up after a library rescan.</p>
+      <div class="row actions">
         <button class="primary" id="pick">Choose ROM root folder</button>
-        <button class="ghost" data-go="platforms">Back to library</button>
         <button class="ghost" id="logout">Log out</button>
       </div>
       <p class="muted" style="margin-top:1rem">${romRoot ? "ROM root selected in this browser." : nativeBridge()?.getRomRoot ? "Native folder access available." : "No ROM root yet — downloads will go through the browser download manager."}</p>
-      ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
     </section>
-  `;
+    `,
+  );
   bindChrome();
   app.querySelector("#layout")?.addEventListener("change", (event) => {
     session.layout = (event.target as HTMLSelectElement).value as FolderLayout;
@@ -640,10 +711,6 @@ function renderSettings() {
     screen = "login";
     render();
   });
-  app.querySelector("[data-go='platforms']")?.addEventListener("click", () => {
-    screen = "platforms";
-    render();
-  });
 }
 
 function bindChrome() {
@@ -660,7 +727,7 @@ function bindChrome() {
       render();
       return;
     }
-    if (screen === "games" || screen === "detail") {
+    if (screen === "games") {
       gameQuery = searchBox.value;
     }
   });
@@ -668,7 +735,7 @@ function bindChrome() {
     if (event.key !== "Enter") return;
     event.preventDefault();
     rememberCaret();
-    if (screen === "games" || screen === "detail") {
+    if (screen === "games") {
       gameQuery = searchBox.value;
       keepSearchFocus = true;
       void loadGames(true);
@@ -678,12 +745,13 @@ function bindChrome() {
       platformQuery = searchBox.value;
       const visible = filterPlatforms(platforms, platformQuery);
       if (visible.length === 1) {
+        tapPulse();
         openPlatform(visible[0]);
       }
     }
   });
   app.querySelector("#clear-search")?.addEventListener("click", () => {
-    if (screen === "games" || screen === "detail") {
+    if (screen === "games") {
       gameQuery = "";
       void loadGames(true);
       return;
@@ -699,9 +767,20 @@ function bindChrome() {
     keepSearchFocus = true;
     void loadGames(true);
   });
-  app.querySelector("[data-go='settings']")?.addEventListener("click", () => {
-    screen = "settings";
-    render();
+  app.querySelector("#download")?.addEventListener("click", () => {
+    if (!selectedRom) return;
+    tapPulse();
+    void downloadRom(selectedRom);
+  });
+  app.querySelectorAll<HTMLButtonElement>("[data-go]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const go = button.dataset.go;
+      if (go === "settings") screen = "settings";
+      else if (go === "platforms") screen = "platforms";
+      else if (go === "games") screen = "games";
+      else return;
+      render();
+    });
   });
 }
 

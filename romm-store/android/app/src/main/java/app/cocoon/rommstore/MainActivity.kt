@@ -64,7 +64,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
         webView = findViewById(R.id.storeWebView)
         statusView = findViewById(R.id.storeStatus)
-        webView.setBackgroundColor(Color.parseColor("#12141c"))
+        webView.setBackgroundColor(Color.parseColor("#07080d"))
 
         @Suppress("DEPRECATION")
         webView.settings.apply {
@@ -78,6 +78,12 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_NO_CACHE
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             mediaPlaybackRequiresUserGesture = false
+            useWideViewPort = true
+            loadWithOverviewMode = false
+            setSupportZoom(false)
+            builtInZoomControls = false
+            displayZoomControls = false
+            textZoom = 100
         }
         WebView.setWebContentsDebuggingEnabled(true)
         webView.webChromeClient = object : WebChromeClient() {
@@ -135,7 +141,7 @@ class MainActivity : AppCompatActivity() {
         mainHandler.postDelayed({
             if (!uiReady) {
                 showNativeError(
-                    "Store ${appVersion()} loaded HTML but JavaScript did not start. Logcat filter RommStore must mention 1.0.5 and must not mention index-dSIPXYpo.js.",
+                    "Store ${appVersion()} loaded HTML but JavaScript did not start. Logcat filter RommStore must mention 1.0.6 and must not mention index-dSIPXYpo.js.",
                 )
             }
         }, 4000)
