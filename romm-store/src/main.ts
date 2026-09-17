@@ -7,6 +7,7 @@ import {
   listSubfolders,
   nativeBridge,
   pickDirectory,
+  platformFetch,
   triggerBrowserDownload,
   triggerUrlDownload,
   isFetchBlocked,
@@ -42,7 +43,11 @@ function showBootError(reason: unknown) {
 }
 
 let session: StoredSession = loadSession();
-let client = new RommClient({ baseUrl: session.baseUrl || "https://demo.romm.app", auth: session.auth });
+let client = new RommClient({
+  baseUrl: session.baseUrl || "https://demo.romm.app",
+  auth: session.auth,
+  fetchImpl: platformFetch,
+});
 let romRoot: FileSystemDirectoryHandle | null = null;
 let existingFolders: string[] = [];
 let screen: "login" | "platforms" | "games" | "detail" | "settings" = session.auth.kind === "none" && !session.baseUrl ? "login" : "platforms";
@@ -139,7 +144,7 @@ async function refreshLocalFolders() {
 }
 
 async function connect(baseUrl: string) {
-  client = new RommClient({ baseUrl, auth: session.auth });
+  client = new RommClient({ baseUrl, auth: session.auth, fetchImpl: platformFetch });
   await client.heartbeat();
   session.baseUrl = client.baseUrl;
   persist();

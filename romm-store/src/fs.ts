@@ -4,6 +4,12 @@ export interface NativeBridge {
   listFolders?: () => Promise<string[]>;
   writeFile?: (relativePath: string, bytes: ArrayBuffer) => Promise<string>;
   download?: (url: string, relativePath: string, authorization?: string) => Promise<string>;
+  httpRequest?: (args: {
+    url: string;
+    method?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  }) => Promise<string>;
   fileExists?: (relativePath: string) => Promise<boolean>;
 }
 
@@ -15,6 +21,43 @@ declare global {
 
 export function nativeBridge(): NativeBridge | null {
   return window.CocoonRomm ?? null;
+}
+
+export async function platformFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const native = nativeBridge();
+  if (!native?.httpRequest) {
+    return fetch(input, init);
+  }
+  const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
+  const headers: Record<string, string> = {};
+  const rawHeaders = init?.headers;
+  if (rawHeaders instanceof Headers) {
+    rawHeaders.forEach((value, key) => {
+      headers[key] = value;
+    });
+  } else if (Array.isArray(rawHeaders)) {
+    for (const [key, value] of rawHeaders) headers[key] = value;
+  } else if (rawHeaders) {
+    for (const [key, value] of Object.entries(rawHeaders)) {
+      if (value != null) headers[key] = String(value);
+    }
+  }
+  let body = "";
+  if (typeof init?.body === "string") body = init.body;
+  else if (init?.body instanceof URLSearchParams) body = init.body.toString();
+  else if (init?.body) body = String(init.body);
+
+  const raw = await native.httpRequest({
+    url,
+    method: init?.method || "GET",
+    headers,
+    body,
+  });
+  const parsed = JSON.parse(raw) as { status: number; body: string; contentType?: string };
+  return new Response(parsed.body, {
+    status: parsed.status,
+    headers: { "Content-Type": parsed.contentType || "application/json" },
+  });
 }
 
 export async function pickDirectory(): Promise<FileSystemDirectoryHandle | null> {

@@ -57,21 +57,25 @@ npm install
 npm run build
 ```
 
-Package id: `app.cocoon.rommstore`. Version **1.0.3**.
+Package id: `app.cocoon.rommstore`. Version **1.0.4**.
 
 ### Run on the Thor from Android Studio (wireless debugging)
+
+Your last Logcat dump is the **old APK**. It requested `file:///android_asset/www/assets/index-dSIPXYpo.js` and never printed the `RommStore` tag. 1.0.4 embeds the UI in `res/raw/store.html` and injects it with `loadDataWithBaseURL`, so that hashed JS file is not used at all.
 
 Open **this folder**, not the CocoonFE repo root:
 
 `C:\Users\kaval\CocoonFE\romm-store\android`
 
-1. `git pull` so you have 1.0.3, then run `npm run build` in `romm-store` if `android/app/src/main/assets/www/index.html` is not already updated.
-2. Android Studio → **File → Open** → select the `android` folder → OK. Trust the project if asked.
-3. Wait until Gradle sync finishes. If a banner says **Sync Now**, click it.
-4. Pair wireless debugging as you already have, and select the Thor in the device dropdown.
-5. Uninstall the old **Cocoon RomM Store** on the Thor first (Settings → Apps), so Studio cannot keep serving a cached WebView bundle.
-6. Click **Run** (green triangle), not only the hammer. Studio will install `1.0.3` and open it.
-7. You should see **Connect RomM** immediately. If you do not, open **View → Tool Windows → Logcat**, filter `RommStore`, and look for `boot`, `page finished`, `app text=`, or `WebView error`.
+1. In a terminal at the CocoonFE repo root: `git pull`. Confirm `romm-store/android/app/build.gradle.kts` says `versionName = "1.0.4"`.
+2. Android Studio → **File → Open** → `romm-store\android`. If it is already open, **File → Sync Project with Gradle Files**.
+3. **Build → Clean Project**, then wait until it finishes.
+4. On the Thor, uninstall **Cocoon RomM Store** (Settings → Apps).
+5. Select the Thor in the device dropdown and click **Run** (green triangle).
+6. You must see a native line **Cocoon RomM Store 1.0.4 — starting…** then **Connect RomM**.
+7. Logcat filter `RommStore` must include `boot 1.0.4 raw/store.html`. It must **not** mention `index-dSIPXYpo.js`.
+
+If Logcat still mentions `index-dSIPXYpo.js` or has no `RommStore` lines, Android Studio did not install this source. Close the project, open `romm-store\android` again, Clean, uninstall, Run.
 
 You can still export an APK later with **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The file is `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`.
 

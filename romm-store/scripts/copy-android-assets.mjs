@@ -11,9 +11,20 @@ if (/type=["']module["']/.test(html)) {
 if (!html.includes("Cocoon RomM Store")) {
   throw new Error("dist/index.html is missing the store markup.");
 }
+if (!html.includes('name="romm-store-build"')) {
+  throw new Error("dist/index.html is missing the romm-store-build marker.");
+}
+if (html.includes("index-dSIPXYpo") || html.includes("assets/index-")) {
+  throw new Error("dist/index.html still references hashed Vite asset files.");
+}
 
 const destDir = join(root, "android", "app", "src", "main", "assets", "www");
 rmSync(destDir, { recursive: true, force: true });
 mkdirSync(destDir, { recursive: true });
 writeFileSync(join(destDir, "index.html"), html);
-console.log(`Copied inlined index.html (${html.length} bytes) to ${destDir}`);
+
+const rawDir = join(root, "android", "app", "src", "main", "res", "raw");
+mkdirSync(rawDir, { recursive: true });
+writeFileSync(join(rawDir, "store.html"), html);
+
+console.log(`Copied inlined index.html (${html.length} bytes) to assets/www and res/raw/store.html`);

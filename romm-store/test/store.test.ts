@@ -114,9 +114,17 @@ describe("android bundle", () => {
       join(dirname(fileURLToPath(import.meta.url)), "../android/app/src/main/assets/www/index.html"),
       "utf8",
     );
+    const raw = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), "../android/app/src/main/res/raw/store.html"),
+      "utf8",
+    );
+    expect(html).toBe(raw);
     expect(html).not.toMatch(/type=["']module["']/);
+    expect(html).not.toMatch(/index-dSIPXYpo/);
+    expect(html).not.toMatch(/assets\/index-/);
     expect(html).not.toMatch(/await fetch\(["']\.\/platform-map\.json/);
     expect(html).toContain("Cocoon RomM Store");
+    expect(html).toContain('name="romm-store-build"');
     expect(html).toContain("<script>");
     expect(html).toContain("<style>");
     expect(html.lastIndexOf("<script>")).toBeGreaterThan(html.lastIndexOf('<div id="app">'));
