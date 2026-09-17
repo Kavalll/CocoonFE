@@ -15,7 +15,7 @@ if (!jsFile) {
 }
 
 let html = readFileSync(join(dist, "index.html"), "utf8");
-const js = readFileSync(join(assetsDir, jsFile), "utf8").replaceAll("</script>", "<\\/script>");
+const js = escapeInlineJs(readFileSync(join(assetsDir, jsFile), "utf8"));
 const css = cssFile ? readFileSync(join(assetsDir, cssFile), "utf8") : "";
 
 if (js.includes("await fetch(\"./platform-map.json\")") || js.includes("await fetch('./platform-map.json')")) {
@@ -24,14 +24,17 @@ if (js.includes("await fetch(\"./platform-map.json\")") || js.includes("await fe
 
 html = html.replace(/<script type="module"[^>]*><\/script>/g, "");
 html = html.replace(/<script[^>]*src="[^"]*assets\/[^"]+\.js"[^>]*><\/script>/g, "");
-html = html.replace(/<link rel="stylesheet"[^>]*>/g, css ? `<style>${css}</style>` : "");
+html = html.replace(/<link rel="stylesheet"[^>]*>/g, () => (css ? `<style>${css}</style>` : ""));
 html = html.replace(/<link rel="modulepreload"[^>]*>/g, "");
 html = html.replace(/<link rel="manifest"[^>]*>/g, "");
 html = html.replace(/\s+crossorigin(="[^"]*")?/g, "");
-if (!html.includes("</body>")) {
+
+const closeBody = html.lastIndexOf("</body>");
+if (closeBody === -1) {
   throw new Error("Vite index.html is missing </body>; cannot place the inlined script.");
 }
-html = html.replace("</body>", `    <script>${js}</script>\n  </body>`);
+
+html = `${html.slice(0, closeBody)}    <script>${js}</script>\n  ${html.slice(closeBody)}`;
 
 if (/type=["']module["']/.test(html)) {
   throw new Error("index.html still contains type=module after inlining.");
@@ -43,5 +46,19 @@ if (html.lastIndexOf("<script>") < html.lastIndexOf('<div id="app">')) {
   throw new Error("Inlined script is still before #app; WebView will throw on boot.");
 }
 
+const scriptStart = html.lastIndexOf("<script>");
+const scriptEnd = html.indexOf("</script>", scriptStart);
+if (scriptStart === -1 || scriptEnd === -1) {
+  throw new Error("Failed to find the inlined store <script> after insertion.");
+}
+const script = html.slice(scriptStart + "<script>".length, scriptEnd);
+if (/<\/(?:body|style|script)/i.test(script)) {
+  throw new Error("Inlined JS contains a closing HTML tag; WebView will throw Unexpected token '<'.");
+}
+
 writeFileSync(join(dist, "index.html"), html);
 console.log(`Inlined ${jsFile}${cssFile ? ` and ${cssFile}` : ""} into dist/index.html for Android WebView.`);
+
+function escapeInlineJs(source) {
+  return source.replace(/<\/(script|body|style)/gi, "<\\/$1");
+}

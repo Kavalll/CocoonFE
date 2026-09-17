@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
         mainHandler.postDelayed({
             if (!uiReady) {
                 showNativeError(
-                    "Store ${appVersion()} loaded HTML but JavaScript did not start. Logcat filter RommStore must mention 1.0.7 and must not mention index-dSIPXYpo.js.",
+                    "Store ${appVersion()} loaded HTML but JavaScript did not start. Logcat filter RommStore must mention 1.0.8 and must not mention Unexpected token.",
                 )
             }
         }, 4000)

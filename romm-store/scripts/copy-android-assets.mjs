@@ -17,6 +17,15 @@ if (!html.includes('name="romm-store-build"')) {
 if (html.includes("index-dSIPXYpo") || html.includes("assets/index-")) {
   throw new Error("dist/index.html still references hashed Vite asset files.");
 }
+const scriptStart = html.lastIndexOf("<script>");
+const scriptEnd = html.indexOf("</script>", scriptStart);
+if (scriptStart === -1 || scriptEnd === -1) {
+  throw new Error("dist/index.html is missing the inlined store <script>.");
+}
+const script = html.slice(scriptStart + "<script>".length, scriptEnd);
+if (/<\/(?:body|style|script)/i.test(script)) {
+  throw new Error("Inlined JS contains a closing HTML tag; WebView will throw Unexpected token '<'.");
+}
 
 const destDir = join(root, "android", "app", "src", "main", "assets", "www");
 rmSync(destDir, { recursive: true, force: true });

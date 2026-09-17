@@ -264,10 +264,24 @@ describe("android bundle", () => {
     expect(html).not.toMatch(/await fetch\(["']\.\/platform-map\.json/);
     expect(html).toContain("Cocoon RomM Store");
     expect(html).toContain('name="romm-store-build"');
-    expect(html).toContain("1.0.7");
+    expect(html).toContain("1.0.8");
     expect(html).toContain("Handheld controls");
     expect(html).toContain("<script>");
     expect(html).toContain("<style>");
     expect(html.lastIndexOf("<script>")).toBeGreaterThan(html.lastIndexOf('<div id="app">'));
+    const scriptStart = html.lastIndexOf("<script>");
+    const scriptEnd = html.indexOf("</script>", scriptStart);
+    const script = html.slice(scriptStart + "<script>".length, scriptEnd);
+    expect(script).not.toMatch(/<\/(?:body|style|script)/i);
+    expect(script).toContain("Download again");
+  });
+
+  it("does not treat minified $& as a String.replace backreference", () => {
+    const js = "${$&&downloaded($)?\"Download again\":\"Download\"}";
+    const broken = "<body></body>".replace("</body>", `<script>${js}</script></body>`);
+    expect(broken).toContain("${</body>");
+    const safe = "<body></body>".replace("</body>", () => `<script>${js}</script></body>`);
+    expect(safe).toContain(js);
+    expect(safe).not.toContain("${</body>");
   });
 });

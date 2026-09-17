@@ -58,13 +58,13 @@ npm install
 npm run build
 ```
 
-Package id: `app.cocoon.rommstore`. Version **1.0.7**. Launcher name: **RomM Store 1.0.7**.
+Package id: `app.cocoon.rommstore`. Version **1.0.8**. Launcher name: **RomM Store 1.0.8**.
 
 This lives on the PR branch `cursor/romm-store-companion-7dfa`, not `main`. If you `git pull` on `main` you will keep an old APK.
 
-## Install 1.0.7 on an AYN Thor
+## Install 1.0.8 on an AYN Thor
 
-Uninstall whatever is already named Cocoon RomM Store / RomM Store first. Android will keep serving the old WebView bundle if you just hit Run over the top of 1.0.0–1.0.5.
+Uninstall whatever is already named Cocoon RomM Store / RomM Store first, including **1.0.7**. Android will keep serving the old WebView bundle if you just hit Run over the top of 1.0.0–1.0.7. 1.0.7 loaded HTML but JavaScript died on `Uncaught SyntaxError: Unexpected token '<'`.
 
 ### Option A — download the CI APK (fastest)
 
@@ -74,7 +74,7 @@ Uninstall whatever is already named Cocoon RomM Store / RomM Store first. Androi
 4. Unzip. Copy `app-debug.apk` to the Thor (USB, Syncthing, or a shared folder).
 5. On the Thor: Settings → Apps → **RomM Store** / **Cocoon RomM Store** → Uninstall.
 6. Open the APK (Files app) and install. Allow unknown sources if Android asks.
-7. The launcher icon must say **RomM Store 1.0.7**. If it does not, you installed an older file.
+7. The launcher icon must say **RomM Store 1.0.8**. If it does not, you installed an older file.
 
 ### Option B — git pull and Run from Android Studio
 
@@ -93,9 +93,9 @@ git pull origin cursor/romm-store-companion-7dfa
 git log -1 --oneline
 ```
 
-`git log -1` should mention 1.0.7. Confirm this file exists:
+`git log -1` should mention 1.0.8. Confirm this file exists:
 
-`C:\Users\kaval\CocoonFE\romm-store\android\THIS_IS_VERSION_107.txt`
+`C:\Users\kaval\CocoonFE\romm-store\android\THIS_IS_VERSION_108.txt`
 
 If `git pull` still refuses, Android Studio has leftover hashed JS. Discard it:
 
@@ -114,16 +114,16 @@ Then in Android Studio:
 4. Enable **Wireless debugging** on the Thor, pair it in Studio.
 5. Uninstall **RomM Store** on the Thor.
 6. Click **Run** (green triangle), not the hammer. The hammer does not install.
-7. You should get a toast **RomM Store 1.0.7**, then **Connect RomM**.
-8. Logcat filter `RommStore` must include `boot 1.0.7 raw/store.html`. It must **not** mention `index-dSIPXYpo.js`.
+7. You should get a toast **RomM Store 1.0.8**, then **Connect RomM**.
+8. Logcat filter `RommStore` must include `boot 1.0.8 raw/store.html`. It must **not** mention `Unexpected token` or `index-dSIPXYpo.js`.
 
 Export an APK instead with **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The file is `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`. Copy that to the Thor.
 
-If the launcher still says **Cocoon RomM Store** without **1.0.7**, the new APK did not install.
+If the launcher still says **Cocoon RomM Store** without **1.0.8**, or still shows “JavaScript did not start”, the new APK did not install.
 
 If Run or Build does nothing, open **View → Tool Windows → Build** and **Gradle**. Install **SDK Platform 35** and **Android SDK Build-Tools** from **Settings → Languages & Frameworks → Android SDK**.
 
-After it launches: enter your RomM URL (Tailscale URL is fine), sign in or browse, **Settings → Choose ROM root folder**, pick the same ROM root Cocoon scans, download a game, then rescan that platform in Cocoon. Pin **RomM Store 1.0.7** to the Cocoon dock.
+After it launches: enter your RomM URL (Tailscale URL is fine), sign in or browse, **Settings → Choose ROM root folder**, pick the same ROM root Cocoon scans, download a game, then rescan that platform in Cocoon. Pin **RomM Store 1.0.8** to the Cocoon dock.
 
 ## Token scopes
 
