@@ -80,6 +80,26 @@ Copy-Item -Recurse -Force dist\* android\app\src\main\assets\www\
 
 Package id: `app.cocoon.rommstore`.
 
+### Build the APK in Android Studio
+
+Open **this folder**, not the CocoonFE repo root:
+
+`C:\Users\kaval\CocoonFE\romm-store\android`
+
+1. Android Studio → **File → Open** → select the `android` folder → OK.
+2. Click **Trust Project** if asked.
+3. Wait until the bottom status bar says Gradle sync finished. The first time it will download the Android SDK / JDK; that can take several minutes. If a banner says **Sync Now**, click it.
+4. Use the menu **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The hammer icon only compiles; it does not export an installable APK by itself.
+5. When a balloon says **APK(s) generated successfully**, click **locate**.
+
+The file is:
+
+`romm-store\android\app\build\outputs\apk\debug\app-debug.apk`
+
+Copy that APK to the Thor and install it.
+
+If Build still does nothing, open **View → Tool Windows → Build** and **Gradle**. A failed sync (missing SDK 35, JDK 17, or the wrong folder opened) is the usual cause. Install **SDK Platform 35** and **Android SDK Build-Tools** from **Settings → Languages & Frameworks → Android SDK**.
+
 ## Token scopes
 
 A read-only client token with `roms.read` is enough to list and download. Create it in RomM under Administration → Client API Tokens. Do not paste that token into a public issue.
