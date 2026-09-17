@@ -49,13 +49,33 @@ npm run dev
 - stream downloads straight into that tree
 - list existing platform folders so alias matching works
 
-Build the web bundle first, copy it into assets, then assemble the APK in Android Studio:
+Build the web bundle first, copy it into assets, then assemble the APK in Android Studio.
+
+macOS / Linux:
 
 ```bash
 npm run build
 rm -rf android/app/src/main/assets/www
 mkdir -p android/app/src/main/assets/www
 cp -R dist/. android/app/src/main/assets/www/
+```
+
+Windows Command Prompt:
+
+```bat
+npm run build
+rmdir /s /q android\app\src\main\assets\www
+mkdir android\app\src\main\assets\www
+xcopy /e /i /y dist\* android\app\src\main\assets\www\
+```
+
+Windows PowerShell:
+
+```powershell
+npm run build
+Remove-Item -Recurse -Force android\app\src\main\assets\www -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force -Path android\app\src\main\assets\www | Out-Null
+Copy-Item -Recurse -Force dist\* android\app\src\main\assets\www\
 ```
 
 Package id: `app.cocoon.rommstore`.
