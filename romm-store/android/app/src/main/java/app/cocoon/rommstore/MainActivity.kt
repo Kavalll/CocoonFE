@@ -2,16 +2,20 @@ package app.cocoon.rommstore
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.documentfile.provider.DocumentFile
+import androidx.webkit.WebViewAssetLoader
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.InputStream
@@ -25,6 +29,13 @@ class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("rommstore", MODE_PRIVATE) }
 
     private var pendingPickId: String? = null
+
+    private val assetLoader by lazy {
+        WebViewAssetLoader.Builder()
+            .setDomain("appassets.androidplatform.net")
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+    }
 
     private val openTree = registerForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -47,20 +58,30 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         webView = WebView(this)
+        webView.setBackgroundColor(Color.parseColor("#12141c"))
         setContentView(webView)
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.allowFileAccess = true
-        webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
+        webView.settings.allowContentAccess = true
+        webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+        webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest,
+            ): WebResourceResponse? {
+                return assetLoader.shouldInterceptRequest(request.url)
+            }
+
             override fun onPageFinished(view: WebView?, url: String?) {
                 injectBridge()
             }
         }
         webView.addJavascriptInterface(Bridge(), "CocoonRommNative")
-        webView.loadUrl("file:///android_asset/www/index.html")
+        webView.loadUrl("https://appassets.androidplatform.net/assets/www/index.html")
     }
 
     private fun romRootUri(): Uri? = prefs.getString("romRoot", null)?.let(Uri::parse)
@@ -106,6 +127,7 @@ class MainActivity : AppCompatActivity() {
         webView.evaluateJavascript(
             """
             (function () {
+              if (window.CocoonRomm) return;
               const pending = {};
               window.__cocoonRommComplete = function (msg) {
                 const job = pending[msg.id];
