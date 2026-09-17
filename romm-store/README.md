@@ -98,6 +98,8 @@ If the launcher still says **Cocoon RomM Store** without 1.0.4, the new APK did 
 
 You can still export an APK with **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The file is `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`.
 
+If Android Studio says **Incompatible Gradle JVM version** (Gradle 8.9 vs JVM 25), do **not** keep JDK 25. Click **Apply compatible Gradle JDK configuration and sync**. If that is missing: **File → Settings → Build, Execution, Deployment → Build Tools → Gradle → Gradle JDK** → pick **17** (or **jbr-17** / **21**). Use **Download JDK** → version **17** → Eclipse Temurin if 17 is not listed. Then Sync.
+
 If Run or Build does nothing, open **View → Tool Windows → Build** and **Gradle**. Install **SDK Platform 35** and **Android SDK Build-Tools** from **Settings → Languages & Frameworks → Android SDK**.
 
 ## Token scopes
