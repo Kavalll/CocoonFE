@@ -8,8 +8,17 @@ import {
   resolveDestination,
   sortPlatformsByGeneration,
 } from "./map";
-import { RommApiError, RommClient, type RommPlatform, type SimpleRom } from "./api";
-import { loadSession, saveSession, romDownloadKey, type StoredSession } from "./storage";
+import { RommApiError, RommClient, isUnauthorized, type RommPlatform, type SimpleRom } from "./api";
+import {
+  loadSession,
+  saveSession,
+  clearSession,
+  hydrateSession,
+  savedUsername,
+  savedPassword,
+  romDownloadKey,
+  type StoredSession,
+} from "./storage";
 import {
   listSubfolders,
   nativeBridge,
@@ -51,11 +60,7 @@ function showBootError(reason: unknown) {
 }
 
 let session: StoredSession = loadSession();
-let client = new RommClient({
-  baseUrl: session.baseUrl || "https://demo.romm.app",
-  auth: session.auth,
-  fetchImpl: platformFetch,
-});
+let client = createClient();
 let romRoot: FileSystemDirectoryHandle | null = null;
 let existingFolders: string[] = [];
 let screen: "login" | "platforms" | "games" | "detail" | "settings" = session.auth.kind === "none" && !session.baseUrl ? "login" : "platforms";
@@ -125,6 +130,24 @@ function persist() {
   saveSession(session);
 }
 
+function createClient() {
+  return new RommClient({
+    baseUrl: session.baseUrl || "https://demo.romm.app",
+    auth: session.auth,
+    fetchImpl: platformFetch,
+    onAuth: (auth) => {
+      session.auth = auth;
+      persist();
+    },
+  });
+}
+
+function rememberFailure(err: unknown): boolean {
+  error = err instanceof Error ? err.message : String(err);
+  if (isUnauthorized(err) && session.auth.kind !== "basic") return true;
+  return false;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -156,7 +179,15 @@ async function refreshLocalFolders() {
 }
 
 async function connect(baseUrl: string) {
-  client = new RommClient({ baseUrl, auth: session.auth, fetchImpl: platformFetch });
+  client = new RommClient({
+    baseUrl,
+    auth: session.auth,
+    fetchImpl: platformFetch,
+    onAuth: (auth) => {
+      session.auth = auth;
+      persist();
+    },
+  });
   await client.heartbeat();
   session.baseUrl = client.baseUrl;
   persist();
@@ -172,8 +203,8 @@ async function loadPlatforms() {
     platforms = sortPlatformsByGeneration(map, await client.platforms());
     screen = "platforms";
   } catch (err) {
-    error = err instanceof Error ? err.message : String(err);
-    screen = "login";
+    const kickToLogin = rememberFailure(err);
+    screen = kickToLogin && !(await client.recoverAuth()) ? "login" : "platforms";
   } finally {
     busy = false;
     render();
@@ -448,18 +479,18 @@ function renderLogin() {
     `
     <section class="panel">
       <h1>Connect RomM</h1>
-      <p class="muted">Pin this store to the Cocoon dock. It writes games into the same platform folders Cocoon already scans.</p>
+      <p class="muted">This Thor keeps you signed in until you tap Log out in Settings.</p>
       <div class="field">
         <label for="baseUrl">RomM URL</label>
         <input id="baseUrl" inputmode="url" autocapitalize="off" value="${escapeHtml(session.baseUrl || "https://demo.romm.app")}" placeholder="https://romm.example.com" />
       </div>
       <div class="field">
         <label for="username">Username</label>
-        <input id="username" autocomplete="username" />
+        <input id="username" autocomplete="username" value="${escapeHtml(savedUsername(session))}" />
       </div>
       <div class="field">
-        <label for="password">Password</label>
-        <input id="password" type="password" autocomplete="current-password" />
+        <label for="password">Password${savedPassword(session) ? " (saved on this device)" : ""}</label>
+        <input id="password" type="password" autocomplete="current-password" placeholder="${savedPassword(session) ? "Saved — leave blank to keep it" : ""}" />
       </div>
       <div class="field">
         <label for="token">Client token or 8-digit pairing code</label>
@@ -497,8 +528,8 @@ async function onKiosk() {
 
 async function onConnect() {
   const baseUrl = (app.querySelector("#baseUrl") as HTMLInputElement).value;
-  const username = (app.querySelector("#username") as HTMLInputElement).value.trim();
-  const password = (app.querySelector("#password") as HTMLInputElement).value;
+  const username = (app.querySelector("#username") as HTMLInputElement).value.trim() || savedUsername(session);
+  const password = (app.querySelector("#password") as HTMLInputElement).value || savedPassword(session);
   const token = (app.querySelector("#token") as HTMLInputElement).value.trim();
   busy = true;
   error = "";
@@ -707,6 +738,7 @@ function renderSettings() {
   app.querySelector("#logout")?.addEventListener("click", () => {
     session.auth = { kind: "none" };
     session.baseUrl = "";
+    clearSession();
     persist();
     screen = "login";
     render();
@@ -796,15 +828,20 @@ function render() {
 
 async function start() {
   console.info("[RommStore] start");
+  session = await hydrateSession();
+  client = createClient();
   render();
   romRoot = await restoreRomRoot();
   await refreshLocalFolders();
   if (session.baseUrl) {
     try {
       await connect(session.baseUrl);
+      await client.restoreAuth();
       await loadPlatforms();
-    } catch {
-      screen = "login";
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      const signedIn = session.auth.kind !== "none";
+      screen = !signedIn || (isUnauthorized(err) && !(await client.recoverAuth())) ? "login" : "platforms";
       render();
     }
   }

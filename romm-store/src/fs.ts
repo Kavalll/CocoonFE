@@ -11,6 +11,9 @@ export interface NativeBridge {
     body?: string;
   }) => Promise<string>;
   fileExists?: (relativePath: string) => Promise<boolean>;
+  getPref?: (key: string) => Promise<string>;
+  setPref?: (key: string, value: string) => Promise<string>;
+  removePref?: (key: string) => Promise<string>;
 }
 
 declare global {

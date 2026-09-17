@@ -55,13 +55,21 @@ export interface PairExchangeResponse {
 
 export type AuthState =
   | { kind: "none" }
-  | { kind: "bearer"; token: string; refreshToken?: string; expiresAt?: number }
+  | {
+      kind: "bearer";
+      token: string;
+      refreshToken?: string;
+      expiresAt?: number;
+      username?: string;
+      password?: string;
+    }
   | { kind: "basic"; username: string; password: string };
 
 export interface RommClientOptions {
   baseUrl: string;
   auth?: AuthState;
   fetchImpl?: typeof fetch;
+  onAuth?: (auth: AuthState) => void;
 }
 
 function trimBase(url: string): string {
@@ -73,6 +81,48 @@ export function normalizeBaseUrl(url: string): string {
   if (!trimmed) throw new Error("Server URL is required.");
   const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
   return trimBase(withScheme);
+}
+
+export function isUnauthorized(err: unknown): boolean {
+  return err instanceof RommApiError && (err.status === 401 || err.status === 403);
+}
+
+function isTokenPath(path: string): boolean {
+  return path.startsWith("/api/token");
+}
+
+function isPermanentBearer(auth: Extract<AuthState, { kind: "bearer" }>): boolean {
+  return auth.token.startsWith("rmm_") || (!auth.expiresAt && !auth.refreshToken);
+}
+
+export function romsQuery(options: {
+  platformId?: number;
+  search?: string;
+  limit?: number;
+  offset?: number;
+  variant?: "gallery" | "simple" | "legacy";
+  withFiles?: boolean;
+}): string {
+  const params = new URLSearchParams();
+  params.set("limit", String(options.limit ?? 48));
+  params.set("offset", String(options.offset ?? 0));
+  if (options.search) params.set("search_term", options.search);
+  if (options.withFiles) params.set("with_files", "true");
+  const variant = options.variant ?? "gallery";
+  if (variant === "gallery") {
+    params.set("order_by", "name");
+    params.set("order_dir", "asc");
+    if (options.platformId != null) params.append("platform_ids", String(options.platformId));
+  } else if (variant === "simple") {
+    params.set("order_by", "name");
+    params.set("order_dir", "asc");
+    if (options.platformId != null) params.append("platform_ids", String(options.platformId));
+    params.set("with_char_index", "false");
+    params.set("with_filter_values", "false");
+  } else {
+    if (options.platformId != null) params.set("platform_id", String(options.platformId));
+  }
+  return `/api/roms?${params.toString()}`;
 }
 
 export class RommApiError extends Error {
@@ -88,15 +138,19 @@ export class RommClient {
   baseUrl: string;
   auth: AuthState;
   private fetchImpl: typeof fetch;
+  private onAuth?: (auth: AuthState) => void;
+  private restoring = false;
 
   constructor(options: RommClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.auth = options.auth ?? { kind: "none" };
     this.fetchImpl = options.fetchImpl ?? fetch.bind(globalThis);
+    this.onAuth = options.onAuth;
   }
 
   setAuth(auth: AuthState) {
     this.auth = auth;
+    this.onAuth?.(auth);
   }
 
   authHeaders(): Record<string, string> {
@@ -110,15 +164,69 @@ export class RommClient {
     return {};
   }
 
-  async request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private credentials(): { username: string; password: string } | null {
+    if (this.auth.kind === "basic") return { username: this.auth.username, password: this.auth.password };
+    if (this.auth.kind === "bearer" && this.auth.username && this.auth.password) {
+      return { username: this.auth.username, password: this.auth.password };
+    }
+    return null;
+  }
+
+  async restoreAuth(): Promise<boolean> {
+    if (this.auth.kind === "basic") return true;
+    if (this.auth.kind !== "bearer") return false;
+    if (isPermanentBearer(this.auth)) return true;
+    if (!this.auth.expiresAt) return true;
+    if (this.auth.expiresAt > Date.now() + 30_000) return true;
+    return await this.recoverAuth();
+  }
+
+  async recoverAuth(): Promise<boolean> {
+    if (this.restoring) return false;
+    this.restoring = true;
+    try {
+      if (this.auth.kind === "bearer" && this.auth.refreshToken) {
+        try {
+          await this.refresh();
+          return true;
+        } catch {
+          /* try password next */
+        }
+      }
+      const creds = this.credentials();
+      if (creds) {
+        try {
+          await this.login(creds.username, creds.password);
+          return true;
+        } catch {
+          this.setAuth({ kind: "basic", username: creds.username, password: creds.password });
+          return true;
+        }
+      }
+      return false;
+    } finally {
+      this.restoring = false;
+    }
+  }
+
+  async request<T>(path: string, init: RequestInit = {}, retrying = false): Promise<T> {
+    if (!isTokenPath(path) && !retrying) {
+      await this.restoreAuth();
+    }
     const headers = new Headers(init.headers);
-    for (const [key, value] of Object.entries(this.authHeaders())) {
-      if (!headers.has(key)) headers.set(key, value);
+    if (!isTokenPath(path)) {
+      for (const [key, value] of Object.entries(this.authHeaders())) {
+        if (!headers.has(key)) headers.set(key, value);
+      }
     }
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
       ...init,
       headers,
     });
+    if (response.status === 401 && !isTokenPath(path) && !retrying) {
+      const recovered = await this.recoverAuth();
+      if (recovered) return this.request<T>(path, init, true);
+    }
     if (!response.ok) {
       let detail = `${response.status} ${response.statusText}`;
       try {
@@ -164,13 +272,16 @@ export class RommClient {
       kind: "bearer",
       token: token.access_token,
       refreshToken: token.refresh_token,
-      expiresAt: Date.now() + token.expires * 1000,
+      expiresAt: token.expires ? Date.now() + Number(token.expires) * 1000 : undefined,
+      username,
+      password,
     });
     return token;
   }
 
   async refresh(): Promise<TokenResponse | null> {
     if (this.auth.kind !== "bearer" || !this.auth.refreshToken) return null;
+    const previous = this.auth;
     const body = new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: this.auth.refreshToken,
@@ -183,8 +294,10 @@ export class RommClient {
     this.setAuth({
       kind: "bearer",
       token: token.access_token,
-      refreshToken: token.refresh_token ?? this.auth.refreshToken,
-      expiresAt: Date.now() + token.expires * 1000,
+      refreshToken: token.refresh_token ?? previous.refreshToken,
+      expiresAt: token.expires ? Date.now() + Number(token.expires) * 1000 : undefined,
+      username: previous.username,
+      password: previous.password,
     });
     return token;
   }
@@ -203,25 +316,27 @@ export class RommClient {
     this.setAuth({ kind: "bearer", token: token.trim() });
   }
 
-  roms(query: {
+  async roms(query: {
     platformId?: number;
     search?: string;
     limit?: number;
     offset?: number;
     withFiles?: boolean;
   } = {}): Promise<RomPage> {
-    const params = new URLSearchParams();
-    params.set("limit", String(query.limit ?? 48));
-    params.set("offset", String(query.offset ?? 0));
-    params.set("order_by", "name");
-    params.set("order_dir", "asc");
-    params.set("with_char_index", "false");
-    params.set("with_filter_values", "false");
-    params.set("with_rom_id_index", "false");
-    params.set("with_files", query.withFiles ? "true" : "false");
-    if (query.platformId != null) params.append("platform_ids", String(query.platformId));
-    if (query.search) params.set("search_term", query.search);
-    return this.request<RomPage>(`/api/roms?${params.toString()}`);
+    const variants = ["gallery", "simple", "legacy"] as const;
+    let lastError: unknown;
+    for (const variant of variants) {
+      try {
+        return await this.request<RomPage>(romsQuery({ ...query, variant }));
+      } catch (err) {
+        lastError = err;
+        if (err instanceof RommApiError && (err.status === 500 || err.status === 422 || err.status === 400)) {
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastError;
   }
 
   rom(id: number) {

@@ -14,7 +14,7 @@ import {
   sortPlatformsByGeneration,
   type PlatformMapFile,
 } from "../src/map";
-import { normalizeBaseUrl, RommClient } from "../src/api";
+import { normalizeBaseUrl, RommClient, romsQuery } from "../src/api";
 
 const map = JSON.parse(
   readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../platform-map.json"), "utf8"),
@@ -140,7 +140,103 @@ describe("RomM client", () => {
     expect(page.items[0].name).toBe("Aardvark");
     expect(calls[0]).toContain("platform_ids=4");
     expect(calls[0]).toContain("search_term=zelda");
-    expect(calls[0]).toContain("with_rom_id_index=false");
+    expect(calls[0]).not.toContain("with_rom_id_index=");
+  });
+
+  it("omits gallery sidecars that some RomM versions 500 on", () => {
+    expect(romsQuery({ platformId: 17, variant: "gallery" })).not.toContain("with_rom_id_index");
+    expect(romsQuery({ platformId: 17, variant: "legacy" })).toContain("platform_id=17");
+  });
+
+  it("retries ROM lists after a 500 using a simpler query", async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = String(input);
+      calls.push(url);
+      if (calls.length === 1) {
+        return new Response(JSON.stringify({ detail: "Internal Server Error" }), {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ items: [], total: 0, limit: 48, offset: 0 }), {
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+    const client = new RommClient({
+      baseUrl: "https://romm.example",
+      auth: { kind: "bearer", token: "rmm_test" },
+      fetchImpl,
+    });
+    const page = await client.roms({ platformId: 17 });
+    expect(page.total).toBe(0);
+    expect(calls.length).toBeGreaterThan(1);
+  });
+
+  it("does not send a Bearer token to /api/token", async () => {
+    const headers: string[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      headers.push(new Headers(init?.headers).get("Authorization") || "");
+      return new Response(JSON.stringify({
+        access_token: "new",
+        token_type: "bearer",
+        expires: 3600,
+        refresh_token: "r2",
+      }), { headers: { "Content-Type": "application/json" } });
+    };
+    const client = new RommClient({
+      baseUrl: "https://romm.example",
+      auth: { kind: "bearer", token: "expired", refreshToken: "r1", username: "kaval", password: "secret" },
+      fetchImpl,
+    });
+    await client.login("kaval", "secret");
+    expect(headers[0]).toBe("");
+    expect(client.auth.kind).toBe("bearer");
+    if (client.auth.kind === "bearer") {
+      expect(client.auth.token).toBe("new");
+      expect(client.auth.username).toBe("kaval");
+      expect(client.auth.password).toBe("secret");
+    }
+  });
+
+  it("reissues an expired token then retries the original call", async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const url = String(input);
+      calls.push(`${init?.method || "GET"} ${url}`);
+      if (url.includes("/api/token")) {
+        return new Response(JSON.stringify({
+          access_token: "fresh",
+          token_type: "bearer",
+          expires: 3600,
+          refresh_token: "r2",
+        }), { headers: { "Content-Type": "application/json" } });
+      }
+      const auth = new Headers(init?.headers).get("Authorization");
+      if (auth === "Bearer expired") {
+        return new Response(JSON.stringify({ detail: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify([]), { headers: { "Content-Type": "application/json" } });
+    };
+    const client = new RommClient({
+      baseUrl: "https://romm.example",
+      auth: {
+        kind: "bearer",
+        token: "expired",
+        refreshToken: "r1",
+        expiresAt: Date.now() - 1000,
+        username: "kaval",
+        password: "secret",
+      },
+      fetchImpl,
+    });
+    const platforms = await client.platforms();
+    expect(platforms).toEqual([]);
+    expect(calls.some((line) => line.includes("/api/token"))).toBe(true);
+    expect(client.auth.kind === "bearer" && client.auth.token === "fresh").toBe(true);
   });
 });
 
@@ -168,7 +264,7 @@ describe("android bundle", () => {
     expect(html).not.toMatch(/await fetch\(["']\.\/platform-map\.json/);
     expect(html).toContain("Cocoon RomM Store");
     expect(html).toContain('name="romm-store-build"');
-    expect(html).toContain("1.0.6");
+    expect(html).toContain("1.0.7");
     expect(html).toContain("Handheld controls");
     expect(html).toContain("<script>");
     expect(html).toContain("<style>");

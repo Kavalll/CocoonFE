@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity() {
         mainHandler.postDelayed({
             if (!uiReady) {
                 showNativeError(
-                    "Store ${appVersion()} loaded HTML but JavaScript did not start. Logcat filter RommStore must mention 1.0.6 and must not mention index-dSIPXYpo.js.",
+                    "Store ${appVersion()} loaded HTML but JavaScript did not start. Logcat filter RommStore must mention 1.0.7 and must not mention index-dSIPXYpo.js.",
                 )
             }
         }, 4000)
@@ -269,6 +269,9 @@ class MainActivity : AppCompatActivity() {
                   return call("download", { url: url, relativePath: relativePath, authorization: authorization || "" });
                 },
                 httpRequest: function (args) { return call("httpRequest", args); },
+                getPref: function (key) { return call("getPref", { key: key }); },
+                setPref: function (key, value) { return call("setPref", { key: key, value: value }); },
+                removePref: function (key) { return call("removePref", { key: key }); },
                 fileExists: function (relativePath) {
                   return call("fileExists", { relativePath: relativePath }).then(function (raw) { return raw === "true"; });
                 }
@@ -313,6 +316,25 @@ class MainActivity : AppCompatActivity() {
                 val exists = romRootDoc()?.let { childDoc(it, relative, false)?.exists() } == true
                 complete(id, true, if (exists) "true" else "false")
             }
+        }
+
+        @JavascriptInterface
+        fun getPref(id: String, args: String) {
+            val key = JSONObject(args).optString("key")
+            complete(id, true, prefs.getString(key, "") ?: "")
+        }
+
+        @JavascriptInterface
+        fun setPref(id: String, args: String) {
+            val json = JSONObject(args)
+            prefs.edit().putString(json.optString("key"), json.optString("value")).apply()
+            complete(id, true, "ok")
+        }
+
+        @JavascriptInterface
+        fun removePref(id: String, args: String) {
+            prefs.edit().remove(JSONObject(args).optString("key")).apply()
+            complete(id, true, "ok")
         }
 
         @JavascriptInterface
