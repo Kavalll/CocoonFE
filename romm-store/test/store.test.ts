@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { isFetchBlocked } from "../src/fs";
 import {
   contentDownloadPath,
   joinDownloadPath,
@@ -10,6 +15,7 @@ import {
   sanitizeFilename,
   type PlatformMapFile,
 } from "../src/map";
+import { normalizeBaseUrl, RommClient } from "../src/api";
 import { normalizeBaseUrl, RommClient } from "../src/api";
 
 const map = JSON.parse(
@@ -97,5 +103,12 @@ describe("RomM client", () => {
     expect(calls[0]).toContain("platform_ids=4");
     expect(calls[0]).toContain("search_term=zelda");
     expect(calls[0]).toContain("with_rom_id_index=false");
+  });
+});
+
+describe("browser download fallback", () => {
+  it("detects CORS/fetch blocks", () => {
+    expect(isFetchBlocked(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isFetchBlocked(new Error("Download failed (404)"))).toBe(false);
   });
 });

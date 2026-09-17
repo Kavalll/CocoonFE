@@ -9,6 +9,8 @@ import {
   nativeBridge,
   pickDirectory,
   triggerBrowserDownload,
+  triggerUrlDownload,
+  isFetchBlocked,
   writeToDirectory,
 } from "./fs";
 
@@ -164,6 +166,21 @@ async function loadGames(reset = true) {
   }
 }
 
+async function fetchRomBlob(rom: SimpleRom): Promise<Blob> {
+  return await client.downloadBlob(rom.id, rom.fs_name, (received, total) => {
+    downloadPct = total ? Math.round((received / total) * 100) : 50;
+    status = `Downloading ${formatBytes(received)}${total ? ` / ${formatBytes(total)}` : ""}`;
+    render();
+  });
+}
+
+function startDirectFileDownload(rom: SimpleRom, destFolder: string, reason: string) {
+  triggerUrlDownload(client.downloadUrl(rom.id, rom.fs_name), rom.fs_name);
+  session.downloaded[romDownloadKey(rom.id, rom.fs_name)] = { path: rom.fs_name, at: Date.now() };
+  downloadPct = 100;
+  status = `Browser download started for ${rom.fs_name}. Move it into your Cocoon ${destFolder} folder. ${reason}`;
+}
+
 async function downloadRom(rom: SimpleRom) {
   busy = true;
   error = "";
@@ -185,32 +202,38 @@ async function downloadRom(rom: SimpleRom) {
       session.downloaded[romDownloadKey(rom.id, rom.fs_name)] = { path: saved, at: Date.now() };
       status = `Saved to ${saved}. Rescan this platform in Cocoon if it does not appear immediately.`;
     } else if (native?.writeFile) {
-      const blob = await client.downloadBlob(rom.id, rom.fs_name, (received, total) => {
-        downloadPct = total ? Math.round((received / total) * 100) : 50;
-        status = `Downloading ${formatBytes(received)}${total ? ` / ${formatBytes(total)}` : ""}`;
-        render();
-      });
+      const blob = await fetchRomBlob(rom);
       const saved = await native.writeFile(relative, await blob.arrayBuffer());
       session.downloaded[romDownloadKey(rom.id, rom.fs_name)] = { path: saved, at: Date.now() };
       status = `Saved to ${saved}. Rescan this platform in Cocoon if it does not appear immediately.`;
     } else if (romRoot) {
-      const blob = await client.downloadBlob(rom.id, rom.fs_name, (received, total) => {
-        downloadPct = total ? Math.round((received / total) * 100) : 50;
-        status = `Downloading ${formatBytes(received)}${total ? ` / ${formatBytes(total)}` : ""}`;
-        render();
-      });
-      const saved = await writeToDirectory(romRoot, relative, blob);
-      session.downloaded[romDownloadKey(rom.id, rom.fs_name)] = { path: saved, at: Date.now() };
-      status = `Saved to ${saved}. Rescan this platform in Cocoon if it does not appear immediately.`;
+      try {
+        const blob = await fetchRomBlob(rom);
+        const saved = await writeToDirectory(romRoot, relative, blob);
+        session.downloaded[romDownloadKey(rom.id, rom.fs_name)] = { path: saved, at: Date.now() };
+        status = `Saved to ${saved}. Rescan this platform in Cocoon if it does not appear immediately.`;
+      } catch (err) {
+        if (!isFetchBlocked(err)) throw err;
+        startDirectFileDownload(
+          rom,
+          dest.folderName,
+          "The RomM download URL blocked in-page fetch (CORS). Direct folder write needs the Android wrapper.",
+        );
+      }
     } else {
-      const blob = await client.downloadBlob(rom.id, rom.fs_name, (received, total) => {
-        downloadPct = total ? Math.round((received / total) * 100) : 50;
-        status = `Downloading ${formatBytes(received)}${total ? ` / ${formatBytes(total)}` : ""}`;
-        render();
-      });
-      triggerBrowserDownload(blob, rom.fs_name);
-      session.downloaded[romDownloadKey(rom.id, rom.fs_name)] = { path: rom.fs_name, at: Date.now() };
-      status = `Downloaded ${rom.fs_name}. Move it into your Cocoon ${dest.folderName} folder, or choose a ROM root in Settings so files land there automatically.`;
+      try {
+        const blob = await fetchRomBlob(rom);
+        triggerBrowserDownload(blob, rom.fs_name);
+        session.downloaded[romDownloadKey(rom.id, rom.fs_name)] = { path: rom.fs_name, at: Date.now() };
+        status = `Downloaded ${rom.fs_name}. Move it into your Cocoon ${dest.folderName} folder, or choose a ROM root in Settings so files land there automatically.`;
+      } catch (err) {
+        if (!isFetchBlocked(err)) throw err;
+        startDirectFileDownload(
+          rom,
+          dest.folderName,
+          "RomM file downloads often omit CORS headers, so the file is opened directly instead.",
+        );
+      }
     }
     persist();
     downloadPct = 100;
