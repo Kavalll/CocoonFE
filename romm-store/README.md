@@ -69,7 +69,14 @@ git pull origin cursor/romm-store-companion-7dfa
 git log -1 --oneline
 ```
 
-That log line must mention **1.0.4**. In Android Studio, `romm-store/android/THIS_IS_VERSION_104.txt` must exist. `MainActivity.kt` must contain `R.raw.store`.
+If `git pull` refuses to update, Android Studio copied the old `index-dSIPXYpo.js` files and those local changes block the merge. Discard them, then pull:
+
+```bat
+cd C:\Users\kaval\CocoonFE
+git restore romm-store/android/app/src/main/assets/www
+git clean -fd romm-store/android/gradle romm-store/android/gradlew romm-store/android/gradlew.bat
+git pull origin cursor/romm-store-companion-7dfa
+```
 
 Easiest install: open the GitHub PR → **Checks / Actions** → **RomM Store APK** → download `CocoonRommStore-debug` → copy `app-debug.apk` to the Thor and install it. Uninstall the old app first. The launcher icon will say **RomM Store 1.0.4**.
 
