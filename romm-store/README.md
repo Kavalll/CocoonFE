@@ -57,29 +57,41 @@ npm install
 npm run build
 ```
 
-Package id: `app.cocoon.rommstore`. Version **1.0.4**.
+Package id: `app.cocoon.rommstore`. Version **1.0.4**. Launcher name: **RomM Store 1.0.4**.
+
+This lives on the PR branch `cursor/romm-store-companion-7dfa`, not `main`. If you `git pull` on `main` you will keep the old white-screen APK.
+
+```bat
+cd C:\Users\kaval\CocoonFE
+git fetch origin
+git checkout cursor/romm-store-companion-7dfa
+git pull origin cursor/romm-store-companion-7dfa
+git log -1 --oneline
+```
+
+That log line must mention **1.0.4**. In Android Studio, `romm-store/android/THIS_IS_VERSION_104.txt` must exist. `MainActivity.kt` must contain `R.raw.store`.
+
+Easiest install: open the GitHub PR → **Checks / Actions** → **RomM Store APK** → download `CocoonRommStore-debug` → copy `app-debug.apk` to the Thor and install it. Uninstall the old app first. The launcher icon will say **RomM Store 1.0.4**.
 
 ### Run on the Thor from Android Studio (wireless debugging)
 
-Your last Logcat dump is the **old APK**. It requested `file:///android_asset/www/assets/index-dSIPXYpo.js` and never printed the `RommStore` tag. 1.0.4 embeds the UI in `res/raw/store.html` and injects it with `loadDataWithBaseURL`, so that hashed JS file is not used at all.
+Logcat that mentions `index-dSIPXYpo.js` and never `RommStore` is still the **old APK**. Studio did not build this folder.
 
 Open **this folder**, not the CocoonFE repo root:
 
 `C:\Users\kaval\CocoonFE\romm-store\android`
 
-1. In a terminal at the CocoonFE repo root: `git pull`. Confirm `romm-store/android/app/build.gradle.kts` says `versionName = "1.0.4"`.
-2. Android Studio → **File → Open** → `romm-store\android`. If it is already open, **File → Sync Project with Gradle Files**.
-3. **Build → Clean Project**, then wait until it finishes.
-4. On the Thor, uninstall **Cocoon RomM Store** (Settings → Apps).
-5. Select the Thor in the device dropdown and click **Run** (green triangle).
-6. You must see a native line **Cocoon RomM Store 1.0.4 — starting…** then **Connect RomM**.
-7. Logcat filter `RommStore` must include `boot 1.0.4 raw/store.html`. It must **not** mention `index-dSIPXYpo.js`.
+1. Confirm `THIS_IS_VERSION_104.txt` is in that folder.
+2. **File → Sync Project with Gradle Files**, then **Build → Clean Project**.
+3. Uninstall **Cocoon RomM Store** on the Thor.
+4. **Run**. You should get a toast **RomM Store 1.0.4**, then **Connect RomM**.
+5. Logcat filter `RommStore` must include `boot 1.0.4 raw/store.html`. It must **not** mention `index-dSIPXYpo.js`.
 
-If Logcat still mentions `index-dSIPXYpo.js` or has no `RommStore` lines, Android Studio did not install this source. Close the project, open `romm-store\android` again, Clean, uninstall, Run.
+If the launcher still says **Cocoon RomM Store** without 1.0.4, the new APK did not install.
 
-You can still export an APK later with **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The file is `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`.
+You can still export an APK with **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The file is `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`.
 
-If Run or Build does nothing, open **View → Tool Windows → Build** and **Gradle**. A failed sync (missing SDK 35, JDK 17, or the wrong folder opened) is the usual cause. Install **SDK Platform 35** and **Android SDK Build-Tools** from **Settings → Languages & Frameworks → Android SDK**.
+If Run or Build does nothing, open **View → Tool Windows → Build** and **Gradle**. Install **SDK Platform 35** and **Android SDK Build-Tools** from **Settings → Languages & Frameworks → Android SDK**.
 
 ## Token scopes
 
