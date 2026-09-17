@@ -1,6 +1,13 @@
 import "./styles.css";
 import type { PlatformMapFile, FolderLayout } from "./map";
-import { joinDownloadPath, resolveDestination } from "./map";
+import {
+  filterPlatforms,
+  joinDownloadPath,
+  platformDisplayName,
+  platformReleaseYear,
+  resolveDestination,
+  sortPlatformsByGeneration,
+} from "./map";
 import { RommApiError, RommClient, type RommPlatform, type SimpleRom } from "./api";
 import { loadSession, saveSession, romDownloadKey, type StoredSession } from "./storage";
 import {
@@ -56,7 +63,10 @@ let currentPlatform: RommPlatform | null = null;
 let roms: SimpleRom[] = [];
 let romTotal = 0;
 let romOffset = 0;
-let search = "";
+let platformQuery = "";
+let gameQuery = "";
+let keepSearchFocus = false;
+let searchCaret = 0;
 let selectedRom: SimpleRom | null = null;
 let status = "";
 let error = "";
@@ -156,7 +166,7 @@ async function loadPlatforms() {
   render();
   try {
     await refreshLocalFolders();
-    platforms = (await client.platforms()).sort((a, b) => (a.display_name || a.name).localeCompare(b.display_name || b.name));
+    platforms = sortPlatformsByGeneration(map, await client.platforms());
     screen = "platforms";
   } catch (err) {
     error = err instanceof Error ? err.message : String(err);
@@ -179,7 +189,7 @@ async function loadGames(reset = true) {
   try {
     const page = await client.roms({
       platformId: currentPlatform.id,
-      search: search.trim() || undefined,
+      search: gameQuery.trim() || undefined,
       limit: 48,
       offset: romOffset,
     });
@@ -275,17 +285,71 @@ async function downloadRom(rom: SimpleRom) {
   }
 }
 
+function searchValue(): string {
+  if (screen === "games" || screen === "detail") return gameQuery;
+  if (screen === "platforms") return platformQuery;
+  return "";
+}
+
+function searchPlaceholder(): string {
+  if (screen === "games" || screen === "detail") {
+    return `Search games on ${platformDisplayName(currentPlatform ?? {})}`;
+  }
+  return "Filter platforms";
+}
+
+function searchHint(): string {
+  if (screen === "platforms") {
+    return platformQuery.trim()
+      ? "Filtering consoles only. Open a platform to browse its games — this text is not a game search."
+      : "Filter consoles by name. Open one, then search game titles.";
+  }
+  if (screen === "games" || screen === "detail") {
+    return gameQuery.trim()
+      ? `Showing ${platformDisplayName(currentPlatform ?? {})} games matching this title.`
+      : "Search game titles on this platform only.";
+  }
+  return "";
+}
+
 function topbar(subtitle: string) {
+  const showSearch = screen === "platforms" || screen === "games" || screen === "detail";
+  const query = searchValue();
   return `
     <header class="topbar">
       <div class="brand">
         <strong>Cocoon RomM Store</strong>
         <span>${subtitle}</span>
       </div>
-      ${screen !== "login" ? `<input class="search" id="search" placeholder="Search this library" value="${escapeHtml(search)}" />` : ""}
+      ${showSearch ? `
+        <div class="search-wrap">
+          <div class="search-row">
+            <input class="search" id="search" type="search" enterkeyhint="search" placeholder="${escapeHtml(searchPlaceholder())}" value="${escapeHtml(query)}" />
+            ${query ? `<button class="ghost icon" id="clear-search" type="button" aria-label="Clear search">Clear</button>` : ""}
+            ${screen === "games" || screen === "detail" ? `<button class="primary icon" id="run-search" type="button">Search</button>` : ""}
+          </div>
+          <p class="search-hint">${escapeHtml(searchHint())}</p>
+        </div>
+      ` : ""}
       ${screen !== "login" ? `<button class="ghost" data-go="settings">Settings</button>` : ""}
     </header>
   `;
+}
+
+function restoreSearchFocus() {
+  if (!keepSearchFocus) return;
+  keepSearchFocus = false;
+  const box = app.querySelector<HTMLInputElement>("#search");
+  if (!box) return;
+  box.focus();
+  const pos = Math.min(searchCaret, box.value.length);
+  box.setSelectionRange(pos, pos);
+}
+
+function openPlatform(platform: RommPlatform) {
+  currentPlatform = platform;
+  gameQuery = "";
+  void loadGames(true);
 }
 
 function escapeHtml(value: string): string {
@@ -409,28 +473,34 @@ function mappingBadge(slug: string, fsSlug: string): string {
 }
 
 function renderPlatforms() {
+  const visible = filterPlatforms(platforms, platformQuery);
   app.innerHTML = `
     ${topbar(session.baseUrl || "Not connected")}
     ${error ? `<p class="error">${escapeHtml(error)}</p>` : ""}
     <div class="grid">
-      ${platforms.map((platform) => `
+      ${visible.map((platform) => {
+        const year = platformReleaseYear(map, platform);
+        const count = `${platform.rom_count} games`;
+        const meta = year ? `${year} · ${count}` : count;
+        return `
         <button class="card" data-platform="${platform.id}">
           <div class="art" ${coverStyle(platform.url_logo || null)}>${mappingBadge(platform.slug, platform.fs_slug)}</div>
           <div class="meta">
             <h3>${escapeHtml(platform.display_name || platform.name)}</h3>
-            <p>${platform.rom_count} games</p>
+            <p>${escapeHtml(meta)}</p>
           </div>
         </button>
-      `).join("")}
+      `;
+      }).join("")}
     </div>
     ${platforms.length === 0 && !busy ? `<p class="empty">No platforms came back from RomM.</p>` : ""}
+    ${platforms.length > 0 && visible.length === 0 ? `<p class="empty">No platforms match “${escapeHtml(platformQuery.trim())}”. Clear the filter to see every console, newest generation first.</p>` : ""}
   `;
   bindChrome();
   app.querySelectorAll<HTMLButtonElement>("[data-platform]").forEach((button) => {
     button.addEventListener("click", () => {
-      currentPlatform = platforms.find((p) => String(p.id) === button.dataset.platform) ?? null;
-      search = "";
-      void loadGames(true);
+      const match = platforms.find((p) => String(p.id) === button.dataset.platform) ?? null;
+      if (match) openPlatform(match);
     });
   });
 }
@@ -458,6 +528,8 @@ function renderGames() {
       `).join("")}
     </div>
     ${roms.length < romTotal ? `<div class="row" style="margin-top:1rem"><button id="more">Load more</button></div>` : ""}
+    ${roms.length === 0 && !busy && gameQuery.trim() ? `<p class="empty">No ${escapeHtml(title)} games match “${escapeHtml(gameQuery.trim())}”. Clear search to see every game on this platform.</p>` : ""}
+    ${roms.length === 0 && !busy && !gameQuery.trim() ? `<p class="empty">No games on this platform.</p>` : ""}
   `;
   bindChrome();
   app.querySelector("[data-go='platforms']")?.addEventListener("click", () => {
@@ -576,19 +648,56 @@ function renderSettings() {
 
 function bindChrome() {
   const searchBox = app.querySelector<HTMLInputElement>("#search");
+  const rememberCaret = () => {
+    if (!searchBox) return;
+    searchCaret = searchBox.selectionStart ?? searchBox.value.length;
+  };
+  searchBox?.addEventListener("input", () => {
+    rememberCaret();
+    if (screen === "platforms") {
+      platformQuery = searchBox.value;
+      keepSearchFocus = true;
+      render();
+      return;
+    }
+    if (screen === "games" || screen === "detail") {
+      gameQuery = searchBox.value;
+    }
+  });
   searchBox?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      search = searchBox.value;
-      if (screen === "games" || screen === "detail") void loadGames(true);
-      else {
-        const q = search.trim().toLowerCase();
-        const match = platforms.find((p) => (p.display_name || p.name).toLowerCase().includes(q));
-        if (match) {
-          currentPlatform = match;
-          void loadGames(true);
-        }
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    rememberCaret();
+    if (screen === "games" || screen === "detail") {
+      gameQuery = searchBox.value;
+      keepSearchFocus = true;
+      void loadGames(true);
+      return;
+    }
+    if (screen === "platforms") {
+      platformQuery = searchBox.value;
+      const visible = filterPlatforms(platforms, platformQuery);
+      if (visible.length === 1) {
+        openPlatform(visible[0]);
       }
     }
+  });
+  app.querySelector("#clear-search")?.addEventListener("click", () => {
+    if (screen === "games" || screen === "detail") {
+      gameQuery = "";
+      void loadGames(true);
+      return;
+    }
+    platformQuery = "";
+    keepSearchFocus = true;
+    searchCaret = 0;
+    render();
+  });
+  app.querySelector("#run-search")?.addEventListener("click", () => {
+    const value = searchBox?.value ?? gameQuery;
+    gameQuery = value;
+    keepSearchFocus = true;
+    void loadGames(true);
   });
   app.querySelector("[data-go='settings']")?.addEventListener("click", () => {
     screen = "settings";
@@ -602,6 +711,7 @@ function render() {
   else if (screen === "detail") renderDetail();
   else if (screen === "games") renderGames();
   else renderPlatforms();
+  restoreSearchFocus();
   notifyNativeReady();
 }
 

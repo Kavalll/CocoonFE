@@ -135,7 +135,7 @@ class MainActivity : AppCompatActivity() {
         mainHandler.postDelayed({
             if (!uiReady) {
                 showNativeError(
-                    "Store ${appVersion()} loaded HTML but JavaScript did not start. Logcat filter RommStore must mention 1.0.4 and must not mention index-dSIPXYpo.js.",
+                    "Store ${appVersion()} loaded HTML but JavaScript did not start. Logcat filter RommStore must mention 1.0.5 and must not mention index-dSIPXYpo.js.",
                 )
             }
         }, 4000)
@@ -171,7 +171,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (!html.contains("romm-store-build")) {
-            showNativeError("Store $version HTML is missing the 1.0.4 marker. Clean rebuild after git pull.")
+            showNativeError("Store $version HTML is missing the romm-store-build marker. Clean rebuild after git pull.")
             return
         }
         // Inject the HTML string so WebView cannot fall back to stale assets/www JS/CSS files.

@@ -9,7 +9,8 @@ It is **not a second launcher**. Keep Cocoon as home. Use this only to pull game
 ## What you get
 
 - Sign in with username/password, a `rmm_` client token, or an 8-digit pairing code from RomM → Administration → Client API Tokens
-- Browse platforms and games from your server
+- Browse platforms (newest generation first) and games from your server
+- Filter consoles separately from searching game titles
 - Download a game into `ROM_ROOT/<cocoon-unique-id>/<filename>`
 - Folder layouts:
   - **Cocoon unique IDs** (default): `gb`, `snes`, `n64`, `gc`, `n3ds`, `mastersystem`, …
@@ -57,7 +58,7 @@ npm install
 npm run build
 ```
 
-Package id: `app.cocoon.rommstore`. Version **1.0.4**. Launcher name: **RomM Store 1.0.4**.
+Package id: `app.cocoon.rommstore`. Version **1.0.5**. Launcher name: **RomM Store 1.0.5**.
 
 This lives on the PR branch `cursor/romm-store-companion-7dfa`, not `main`. If you `git pull` on `main` you will keep the old white-screen APK.
 
@@ -78,7 +79,7 @@ git clean -fd romm-store/android/gradle romm-store/android/gradlew romm-store/an
 git pull origin cursor/romm-store-companion-7dfa
 ```
 
-Easiest install: open the GitHub PR → **Checks / Actions** → **RomM Store APK** → download `CocoonRommStore-debug` → copy `app-debug.apk` to the Thor and install it. Uninstall the old app first. The launcher icon will say **RomM Store 1.0.4**.
+Easiest install: open the GitHub PR → **Checks / Actions** → **RomM Store APK** → download `CocoonRommStore-debug` → copy `app-debug.apk` to the Thor and install it. Uninstall the old app first. The launcher icon will say **RomM Store 1.0.5**.
 
 ### Run on the Thor from Android Studio (wireless debugging)
 
@@ -88,13 +89,13 @@ Open **this folder**, not the CocoonFE repo root:
 
 `C:\Users\kaval\CocoonFE\romm-store\android`
 
-1. Confirm `THIS_IS_VERSION_104.txt` is in that folder.
+1. Confirm `THIS_IS_VERSION_105.txt` is in that folder.
 2. **File → Sync Project with Gradle Files**, then **Build → Clean Project**.
 3. Uninstall **Cocoon RomM Store** on the Thor.
-4. **Run**. You should get a toast **RomM Store 1.0.4**, then **Connect RomM**.
-5. Logcat filter `RommStore` must include `boot 1.0.4 raw/store.html`. It must **not** mention `index-dSIPXYpo.js`.
+4. **Run**. You should get a toast **RomM Store 1.0.5**, then **Connect RomM**.
+5. Logcat filter `RommStore` must include `boot 1.0.5 raw/store.html`. It must **not** mention `index-dSIPXYpo.js`.
 
-If the launcher still says **Cocoon RomM Store** without 1.0.4, the new APK did not install.
+If the launcher still says **Cocoon RomM Store** without 1.0.5, the new APK did not install.
 
 You can still export an APK with **Build → Build Bundle(s) / APK(s) → Build APK(s)**. The file is `romm-store\android\app\build\outputs\apk\debug\app-debug.apk`.
 

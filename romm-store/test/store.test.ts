@@ -5,10 +5,13 @@ import { describe, expect, it } from "vitest";
 import { isFetchBlocked } from "../src/fs";
 import {
   contentDownloadPath,
+  filterPlatforms,
   joinDownloadPath,
   lookupPlatform,
+  platformReleaseYear,
   resolveDestination,
   sanitizeFilename,
+  sortPlatformsByGeneration,
   type PlatformMapFile,
 } from "../src/map";
 import { normalizeBaseUrl, RommClient } from "../src/api";
@@ -58,6 +61,46 @@ describe("platform map", () => {
     const dest = resolveDestination(map, { rommSlug: "playdate", rommFsSlug: "playdate" });
     expect(dest.mapped).toBe(false);
     expect(dest.folderName).toBe("playdate");
+  });
+});
+
+describe("platform generation sort and search", () => {
+  const sample = [
+    { slug: "nes", fs_slug: "nes", name: "NES", display_name: "Nintendo Entertainment System", rom_count: 3 },
+    { slug: "switch", fs_slug: "switch", name: "Switch", display_name: "Nintendo Switch", rom_count: 12 },
+    { slug: "nds", fs_slug: "nds", name: "NDS", display_name: "Nintendo DS", rom_count: 8 },
+    { slug: "3ds", fs_slug: "3ds", name: "3DS", display_name: "Nintendo 3DS", rom_count: 9 },
+    { slug: "wiiu", fs_slug: "wiiu", name: "Wii U", display_name: "Nintendo Wii U", rom_count: 4 },
+    { slug: "ps3", fs_slug: "ps3", name: "PS3", display_name: "Sony PlayStation 3", rom_count: 6 },
+    { slug: "wii", fs_slug: "wii", name: "Wii", display_name: "Nintendo Wii", rom_count: 7 },
+    { slug: "playdate", fs_slug: "playdate", name: "Playdate", display_name: "Playdate", rom_count: 1 },
+  ];
+
+  it("sorts consoles newest generation first", () => {
+    const ordered = sortPlatformsByGeneration(map, sample).map((p) => p.slug);
+    expect(ordered.slice(0, 5)).toEqual(["switch", "wiiu", "3ds", "wii", "ps3"]);
+    expect(ordered.at(-1)).toBe("playdate");
+  });
+
+  it("knows original launch years", () => {
+    expect(platformReleaseYear(map, { slug: "switch" })).toBe(2017);
+    expect(platformReleaseYear(map, { slug: "3ds" })).toBe(2011);
+    expect(platformReleaseYear(map, { slug: "nds" })).toBe(2004);
+    expect(platformReleaseYear(map, { slug: "nes" })).toBe(1983);
+    expect(platformReleaseYear(map, { slug: "ngc" })).toBe(2001);
+  });
+
+  it("filters platforms without treating the query as a game title", () => {
+    const hits = filterPlatforms(sample, "switch");
+    expect(hits.map((p) => p.slug)).toEqual(["switch"]);
+    expect(filterPlatforms(sample, "nintendo").map((p) => p.slug)).toEqual([
+      "nes",
+      "switch",
+      "nds",
+      "3ds",
+      "wiiu",
+      "wii",
+    ]);
   });
 });
 
@@ -125,6 +168,7 @@ describe("android bundle", () => {
     expect(html).not.toMatch(/await fetch\(["']\.\/platform-map\.json/);
     expect(html).toContain("Cocoon RomM Store");
     expect(html).toContain('name="romm-store-build"');
+    expect(html).toContain("1.0.5");
     expect(html).toContain("<script>");
     expect(html).toContain("<style>");
     expect(html.lastIndexOf("<script>")).toBeGreaterThan(html.lastIndexOf('<div id="app">'));
