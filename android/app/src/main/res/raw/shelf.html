@@ -474,10 +474,36 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     return hay.join(" ").toLowerCase().indexOf(q) !== -1;
   }
 
-  function filterPlatforms(platforms, query) {
+  function platformGameCount(platform) {
+    if (!platform) return 0;
+    var count = platform.rom_count;
+    var n = Number(count);
+    if (count == null || !isFinite(n) || n < 1) return 0;
+    return n;
+  }
+
+  function hasGames(platform) {
+    return platformGameCount(platform) >= 1;
+  }
+
+  function platformsWithGames(platforms) {
     var out = [];
-    for (var i = 0; i < platforms.length; i++) {
-      if (platformMatchesQuery(platforms[i], query)) out.push(platforms[i]);
+    var list = platforms || [];
+    for (var i = 0; i < list.length; i++) {
+      if (hasGames(list[i])) out.push(list[i]);
+    }
+    return out;
+  }
+
+  function canOpenPlatform(platform) {
+    return hasGames(platform);
+  }
+
+  function filterPlatforms(platforms, query) {
+    var source = platformsWithGames(platforms);
+    var out = [];
+    for (var i = 0; i < source.length; i++) {
+      if (platformMatchesQuery(source[i], query)) out.push(source[i]);
     }
     return out;
   }
@@ -646,6 +672,10 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     normalizeBaseUrl: normalizeBaseUrl,
     platformDisplayName: platformDisplayName,
     platformKey: platformKey,
+    platformGameCount: platformGameCount,
+    hasGames: hasGames,
+    platformsWithGames: platformsWithGames,
+    canOpenPlatform: canOpenPlatform,
     filterPlatforms: filterPlatforms,
     platformReleaseYear: platformReleaseYear,
     sortPlatformsByGeneration: sortPlatformsByGeneration,
@@ -989,6 +1019,7 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     }
 
     function openPlatform(platform) {
+      if (!canOpenPlatform(platform)) return;
       state.platform = platform;
       state.gameSearch = "";
       state.game = null;
@@ -1066,7 +1097,7 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       if (!result) { setStatus("Could not reach RomM."); return; }
       if (result.logout) { forceLogout(result.error); return; }
       if (!result.ok) { setStatus(result.error || "Could not load consoles."); return; }
-      memoryPlatforms = sortPlatformsByGeneration(map, result.platforms || []);
+      memoryPlatforms = sortPlatformsByGeneration(map, platformsWithGames(result.platforms || []));
       renderPlatforms(memoryPlatforms);
       setStatus("");
     }

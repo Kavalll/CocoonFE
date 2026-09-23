@@ -67,6 +67,30 @@ test("platforms sort newest first and a console filter is not a game search", ()
   assert.equal(cleared.query, "");
 });
 
+test("platforms with no games stay out of the list, the filter, and focus", () => {
+  const list = [
+    { slug: "switch", fs_slug: "switch", name: "Switch", display_name: "Nintendo Switch", rom_count: 2 },
+    { slug: "nes", fs_slug: "nes", name: "NES", display_name: "Nintendo Entertainment System", rom_count: 0 },
+    { slug: "empty", fs_slug: "empty", name: "Empty", display_name: "Empty Console" },
+    { slug: "snes", fs_slug: "snes", name: "SNES", display_name: "Super Nintendo", rom_count: "4" }
+  ];
+  assert.deepEqual(shelf.platformsWithGames(list).map((platform) => platform.slug), ["switch", "snes"]);
+  const filtered = shelf.applyPlatformFilterModel(list, "", "nes");
+  assert.deepEqual(filtered.visible.map((platform) => platform.slug), ["switch", "snes"]);
+  assert.equal(filtered.focusedId, "switch");
+  assert.equal(filtered.fetchGames, false);
+  assert.equal(filtered.screen, "platforms");
+  const namedEmpty = shelf.applyPlatformFilterModel(list, "nes", "nes");
+  assert.deepEqual(namedEmpty.visible.map((platform) => platform.slug), ["snes"]);
+  assert.equal(namedEmpty.focusedId, "snes");
+  const onlyEmpty = shelf.applyPlatformFilterModel(list, "empty", "empty");
+  assert.deepEqual(onlyEmpty.visible, []);
+  assert.equal(onlyEmpty.focusedId, null);
+  assert.equal(shelf.canOpenPlatform(list[1]), false);
+  assert.equal(shelf.canOpenPlatform(list[2]), false);
+  assert.equal(shelf.canOpenPlatform(list[0]), true);
+});
+
 test("HTTP 500 stays signed in and only a failed refresh logs out", () => {
   assert.equal(shelf.authEffect(500, false), "stay");
   assert.equal(shelf.authEffect(500, true), "stay");
