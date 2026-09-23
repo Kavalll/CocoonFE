@@ -1,47 +1,106 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="bright">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Cocoon RomM Shelf</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; background: #0e1114; color: #f4f1ea; }
-    body { font: 16px/1.3 "Segoe UI", Roboto, sans-serif; }
+    html, body { margin: 0; height: 100%; }
+    body { font: 700 18px/1.25 "Trebuchet MS", "Segoe UI", sans-serif; }
     #boot-fallback { padding: 24px; }
-    #app { height: 100%; display: flex; flex-direction: column; }
-    header { flex: 0 0 auto; padding: 6px 10px 0; }
-    header h1 { margin: 0; font-size: 16px; }
-    #subtitle, #status, #download-progress, #rescan-note { margin: 2px 0; font-size: 13px; color: #d5d0c6; }
-    #download-progress { color: #ffe14a; min-height: 1em; }
-    #search-layer { flex: 0 0 auto; padding: 4px 10px; }
-    #search-input { width: 100%; min-height: 40px; font-size: 16px; background: #1b2128; color: #f4f1ea; border: 2px solid #8a8478; border-radius: 8px; padding: 6px 8px; }
-    main { flex: 1 1 auto; overflow: auto; padding: 6px 8px 8px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px; }
-    .card, .field, .choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; text-align: left; background: #1b2128; color: #f4f1ea; border: 2px solid #2c343d; border-radius: 10px; padding: 8px; min-height: 64px; }
-    .card-title, .choice { font-size: 15px; }
-    .card-meta { color: #b7b1a6; font-size: 12px; }
-    img.cover { width: 72px; height: 96px; object-fit: cover; background: #111; }
-    .stack { display: flex; flex-direction: column; gap: 8px; max-width: 520px; }
-    label.field { min-height: 56px; }
-    input[type="text"], input[type="password"], input[type="url"] { width: 100%; min-height: 36px; font-size: 16px; background: #0e1114; color: #f4f1ea; border: 1px solid #8a8478; border-radius: 6px; padding: 4px 6px; }
-    .is-focused { outline: 3px solid #ffe14a; outline-offset: 2px; }
-    .is-selected { border-color: #ffe14a; }
-    #bar { flex: 0 0 auto; display: flex; gap: 4px; padding: 4px; background: #161b20; }
-    #bar button { flex: 1 1 0; min-width: 56px; min-height: 56px; font-size: 15px; background: #2a333c; color: #f4f1ea; border: 2px solid #3d4852; border-radius: 10px; }
+    #app { height: 100%; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+    .sky { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .cloud { position: absolute; background: var(--cloud); border-radius: 40px; height: 38px; }
+    .cloud:before, .cloud:after { content: ""; position: absolute; background: var(--cloud); border-radius: 50%; }
+    .cloud.c1 { width: 120px; top: 18px; left: 6%; }
+    .cloud.c1:before { width: 46px; height: 46px; top: -22px; left: 18px; }
+    .cloud.c1:after { width: 64px; height: 64px; top: -32px; left: 46px; }
+    .cloud.c2 { width: 160px; top: 8px; right: 8%; }
+    .cloud.c2:before { width: 54px; height: 54px; top: -26px; left: 28px; }
+    .cloud.c2:after { width: 78px; height: 78px; top: -40px; left: 68px; }
+    .cloud.c3 { width: 100px; bottom: 72px; left: 18%; opacity: 0.85; }
+    .cloud.c3:before { width: 40px; height: 40px; top: -18px; left: 14px; }
+    .cloud.c3:after { width: 56px; height: 56px; top: -28px; left: 40px; }
+    header, #search-layer, main, #bar { position: relative; z-index: 1; }
+    header { flex: 0 0 auto; padding: 8px 12px 0; }
+    header h1 { margin: 0; font-size: 22px; letter-spacing: 0.02em; }
+    #subtitle, #status, #download-progress, #rescan-note, #cover-note { margin: 2px 0; font-size: 14px; font-weight: 700; }
+    #download-progress { min-height: 1.1em; }
+    #search-layer { flex: 0 0 auto; padding: 6px 12px 0; }
+    #search-input { width: 100%; min-height: 44px; font: 700 18px/1.2 "Trebuchet MS", "Segoe UI", sans-serif; border-radius: 22px; padding: 8px 14px; }
+    main { flex: 1 1 auto; overflow: auto; padding: 8px 10px 10px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
+    .card, .field, .choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; text-align: left; border-radius: 28px; padding: 12px 14px; min-height: 72px; font: inherit; }
+    .card-title, .choice, .group-label { font-size: 18px; font-weight: 700; }
+    .group-label { margin: 8px 4px 0; }
+    .card-meta, #cover-note, #rescan-note { font-size: 13px; font-weight: 700; }
+    img.cover { width: 72px; height: 96px; object-fit: cover; border-radius: 18px; background: rgba(0, 0, 0, 0.12); }
+    .stack { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+    label.field { min-height: 64px; }
+    input[type="text"], input[type="password"], input[type="url"] { width: 100%; min-height: 40px; font: 700 16px/1.2 "Trebuchet MS", "Segoe UI", sans-serif; border-radius: 16px; padding: 6px 10px; }
+    .is-focused { outline: 4px solid var(--ring); outline-offset: 2px; }
+    .is-selected { border-color: var(--ring); }
+    #bar { flex: 0 0 auto; display: flex; gap: 8px; padding: 8px; }
+    #bar button { flex: 1 1 0; min-width: 56px; min-height: 56px; font: 700 16px/1.1 "Trebuchet MS", "Segoe UI", sans-serif; border-radius: 28px; }
     [hidden] { display: none !important; }
+    html[data-theme="bright"] {
+      --sky-top: #8fd4ff; --sky-bottom: #f7fbff; --ink: #14365c; --muted: #3d6288;
+      --card: #ffffff; --card-edge: #ffffff; --shadow: rgba(20, 80, 140, 0.18);
+      --field: #f4f9ff; --field-edge: #9ec8ea; --bar: rgba(255, 255, 255, 0.88);
+      --bar-btn: #ffffff; --bar-edge: #d5ebf8; --cloud: rgba(255, 255, 255, 0.95);
+      --ring: #07284a; --progress: #0b4f86; --boot: #14365c;
+    }
+    html[data-theme="dark"] {
+      --sky-top: #12325f; --sky-bottom: #071428; --ink: #f4f8ff; --muted: #c5d7ee;
+      --card: #1b4f8a; --card-edge: #8eb6e8; --shadow: rgba(0, 0, 0, 0.35);
+      --field: #0d2244; --field-edge: #7ea6d4; --bar: rgba(8, 22, 48, 0.92);
+      --bar-btn: #245a9a; --bar-edge: #9ec0ea; --cloud: rgba(198, 220, 255, 0.55);
+      --ring: #ffe14a; --progress: #ffe14a; --boot: #f4f8ff;
+    }
+    body { background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)); color: var(--ink); }
+    #boot-fallback, #noscript-fallback { color: var(--boot); }
+    #subtitle, #status, .card-meta, #cover-note, #rescan-note { color: var(--muted); }
+    #download-progress { color: var(--progress); }
+    #search-input, input[type="text"], input[type="password"], input[type="url"] {
+      background: var(--field); color: var(--ink); border: 3px solid var(--field-edge);
+    }
+    .card, .field, .choice {
+      background: var(--card); color: var(--ink); border: 3px solid var(--card-edge);
+      box-shadow: 0 6px 0 var(--shadow);
+    }
+    #bar { background: var(--bar); }
+    #bar button { background: var(--bar-btn); color: var(--ink); border: 3px solid var(--bar-edge); box-shadow: 0 4px 0 var(--shadow); }
     @media (max-height: 420px) {
-      header h1 { font-size: 14px; }
+      header { padding-top: 4px; }
+      header h1 { font-size: 16px; }
       #subtitle { display: none; }
-      .card, .choice { min-height: 48px; padding: 6px; }
-      img.cover { width: 40px; height: 54px; }
-      .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+      .cloud.c3 { display: none; }
+      .cloud.c1, .cloud.c2 { transform: scale(0.7); transform-origin: top left; }
+      .card, .choice { min-height: 56px; padding: 8px 10px; border-radius: 22px; }
+      .card-title, .choice { font-size: 15px; }
+      img.cover { width: 40px; height: 54px; border-radius: 12px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px; }
+      main { padding: 4px 8px 6px; }
+      #bar { padding: 4px; gap: 4px; }
+      #bar button { min-height: 56px; font-size: 14px; }
+    }
+    @media (min-width: 900px) and (min-height: 700px) {
+      header h1 { font-size: 28px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+      .card, .choice { min-height: 88px; border-radius: 32px; }
+      img.cover { width: 84px; height: 112px; }
     }
   </style>
 </head>
 <body>
   <div id="boot-fallback">Starting Cocoon RomM Shelf…</div>
   <div id="app" hidden>
+    <div class="sky" aria-hidden="true">
+      <span class="cloud c1"></span>
+      <span class="cloud c2"></span>
+      <span class="cloud c3"></span>
+    </div>
     <header>
       <h1 id="title">Cocoon RomM Shelf</h1>
       <p id="subtitle"></p>
@@ -49,18 +108,18 @@
       <p id="download-progress"></p>
     </header>
     <div id="search-layer" hidden>
-      <input id="search-input" data-focus="1" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Filter consoles">
+      <input id="search-input" data-focus="1" data-zone="field" data-focus-id="search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Filter consoles">
     </div>
     <main>
       <section id="screen-connect" class="stack">
-        <label class="field">Server URL<input id="server-url" data-focus="1" type="url" autocomplete="off" placeholder="http://romm.local:8080"></label>
-        <label class="field">Username<input id="username" data-focus="1" type="text" autocomplete="username"></label>
-        <label class="field">Password<input id="password" data-focus="1" type="password" autocomplete="current-password"></label>
-        <label class="field">Client token<input id="client-token" data-focus="1" type="text" autocomplete="off" spellcheck="false" placeholder="rmm_…"></label>
-        <label class="field">Pairing code<input id="pair-code" data-focus="1" type="text" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
-        <button type="button" id="btn-password" data-focus="1" class="choice">Sign in with password</button>
-        <button type="button" id="btn-token" data-focus="1" class="choice">Use client token</button>
-        <button type="button" id="btn-pair" data-focus="1" class="choice">Pair with code</button>
+        <label class="field">Server URL<input id="server-url" data-focus="1" data-zone="page" data-focus-id="server-url" type="url" autocomplete="off" placeholder="http://romm.local:8080"></label>
+        <label class="field">Username<input id="username" data-focus="1" data-zone="page" data-focus-id="username" type="text" autocomplete="username"></label>
+        <label class="field">Password<input id="password" data-focus="1" data-zone="page" data-focus-id="password" type="password" autocomplete="current-password"></label>
+        <label class="field">Client token<input id="client-token" data-focus="1" data-zone="page" data-focus-id="client-token" type="text" autocomplete="off" spellcheck="false" placeholder="rmm_…"></label>
+        <label class="field">Pairing code<input id="pair-code" data-focus="1" data-zone="page" data-focus-id="pair-code" type="text" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
+        <button type="button" id="btn-password" data-focus="1" data-zone="page" data-focus-id="btn-password" class="choice">Sign in with password</button>
+        <button type="button" id="btn-token" data-focus="1" data-zone="page" data-focus-id="btn-token" class="choice">Use client token</button>
+        <button type="button" id="btn-pair" data-focus="1" data-zone="page" data-focus-id="btn-pair" class="choice">Pair with code</button>
       </section>
       <section id="screen-platforms" hidden>
         <div id="platform-grid" class="grid"></div>
@@ -68,27 +127,41 @@
       <section id="screen-games" hidden>
         <div id="game-grid" class="grid"></div>
       </section>
-      <section id="screen-game" hidden>
-        <div id="game-card" data-focus="1" class="card">
+      <section id="screen-game" class="stack" hidden>
+        <div id="game-card" data-focus="1" data-zone="page" data-focus-id="game-card" class="card">
+          <img id="game-cover" class="cover" alt="" width="72" height="96" hidden>
           <span id="game-title" class="card-title"></span>
           <span id="game-file" class="card-meta"></span>
           <span id="game-dest" class="card-meta"></span>
         </div>
+        <button type="button" id="btn-scrape" data-focus="1" data-zone="page" data-focus-id="btn-scrape" class="choice">Scrape art</button>
+        <p id="cover-note" hidden></p>
         <p id="rescan-note" hidden></p>
       </section>
       <section id="screen-settings" class="stack" hidden>
-        <button type="button" id="btn-rom-root" data-focus="1" class="choice">ROM root <span id="rom-root-label">No folder chosen</span></button>
-        <button type="button" id="btn-layout-cocoon" data-focus="1" class="choice">Cocoon folders</button>
-        <button type="button" id="btn-layout-romm" data-focus="1" class="choice">RomM slugs</button>
-        <button type="button" id="btn-layout-alias" data-focus="1" class="choice">Match existing folder</button>
-        <button type="button" id="btn-logout" data-focus="1" class="choice">Log out</button>
+        <button type="button" id="btn-rom-root" data-focus="1" data-zone="page" data-focus-id="btn-rom-root" class="choice">ROM root <span id="rom-root-label">No folder chosen</span></button>
+        <button type="button" id="btn-layout-cocoon" data-focus="1" data-zone="page" data-focus-id="btn-layout-cocoon" class="choice">Cocoon folders</button>
+        <button type="button" id="btn-layout-romm" data-focus="1" data-zone="page" data-focus-id="btn-layout-romm" class="choice">RomM slugs</button>
+        <button type="button" id="btn-layout-alias" data-focus="1" data-zone="page" data-focus-id="btn-layout-alias" class="choice">Match existing folder</button>
+        <p class="group-label">Brightness</p>
+        <button type="button" id="btn-theme-bright" data-focus="1" data-zone="page" data-focus-id="btn-theme-bright" class="choice">Bright</button>
+        <button type="button" id="btn-theme-dark" data-focus="1" data-zone="page" data-focus-id="btn-theme-dark" class="choice">Dark</button>
+        <p class="group-label">Artwork accounts</p>
+        <label class="field">ScreenScraper user<input id="ss-user" data-focus="1" data-zone="page" data-focus-id="ss-user" type="text" autocomplete="off"></label>
+        <label class="field">ScreenScraper password<input id="ss-password" data-focus="1" data-zone="page" data-focus-id="ss-password" type="password" autocomplete="off"></label>
+        <label class="field">ScreenScraper devid<input id="ss-devid" data-focus="1" data-zone="page" data-focus-id="ss-devid" type="text" autocomplete="off"></label>
+        <label class="field">ScreenScraper dev password<input id="ss-devpassword" data-focus="1" data-zone="page" data-focus-id="ss-devpassword" type="password" autocomplete="off"></label>
+        <label class="field">SteamGridDB API key<input id="sgdb-key" data-focus="1" data-zone="page" data-focus-id="sgdb-key" type="password" autocomplete="off"></label>
+        <button type="button" id="btn-save-scraper" data-focus="1" data-zone="page" data-focus-id="btn-save-scraper" class="choice">Save artwork accounts</button>
+        <button type="button" id="btn-clear-scraper" data-focus="1" data-zone="page" data-focus-id="btn-clear-scraper" class="choice">Clear artwork accounts</button>
+        <button type="button" id="btn-logout" data-focus="1" data-zone="page" data-focus-id="btn-logout" class="choice">Log out</button>
       </section>
     </main>
     <nav id="bar">
-      <button type="button" id="btn-back" data-focus="1">Back</button>
-      <button type="button" id="btn-search" data-focus="1">Search</button>
-      <button type="button" id="btn-download" data-focus="1">Download</button>
-      <button type="button" id="btn-settings" data-focus="1">Settings</button>
+      <button type="button" id="btn-back" data-focus="1" data-zone="footer" data-focus-id="btn-back">Back</button>
+      <button type="button" id="btn-search" data-focus="1" data-zone="footer" data-focus-id="btn-search">Search</button>
+      <button type="button" id="btn-download" data-focus="1" data-zone="footer" data-focus-id="btn-download">Download</button>
+      <button type="button" id="btn-settings" data-focus="1" data-zone="footer" data-focus-id="btn-settings">Settings</button>
     </nav>
   </div>
   <noscript><p id="noscript-fallback">JavaScript is required for Cocoon RomM Shelf.</p></noscript>
@@ -644,10 +717,268 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     return String(token || "").replace(/^\s+|\s+$/g, "").indexOf("rmm_") === 0;
   }
 
+  function trimText(value) {
+    return String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
+  }
+
+  function coverField(rom, key) {
+    if (!rom) return "";
+    return trimText(rom[key]);
+  }
+
+  function romCoverCandidates(rom, size) {
+    var small = coverField(rom, "path_cover_small");
+    var large = coverField(rom, "path_cover_large");
+    var external = coverField(rom, "url_cover");
+    var ordered = size === "large" ? [large, small, external] : [small, large, external];
+    var seen = {};
+    var out = [];
+    for (var i = 0; i < ordered.length; i++) {
+      if (!ordered[i] || seen[ordered[i]]) continue;
+      seen[ordered[i]] = true;
+      out.push(ordered[i]);
+    }
+    return out;
+  }
+
   function coverUrl(baseUrl, rom) {
-    var path = rom.url_cover || rom.path_cover_small || rom.path_cover_large || "";
-    if (!path) return "";
-    return absoluteUrl(baseUrl, path);
+    var paths = romCoverCandidates(rom, "small");
+    if (!paths.length) return "";
+    return absoluteUrl(baseUrl, paths[0]);
+  }
+
+  function coverRequestUrls(baseUrl, rom, size) {
+    var paths = romCoverCandidates(rom, size);
+    var out = [];
+    for (var i = 0; i < paths.length; i++) out.push(absoluteUrl(baseUrl, paths[i]));
+    return out;
+  }
+
+  function hostName(url) {
+    var match = String(url || "").match(/^https?:\/\/([^\/?#]+)/i);
+    if (!match) return "";
+    return match[1].split(":")[0].toLowerCase();
+  }
+
+  function coverNeedsAuth(baseUrl, url) {
+    var baseHost = hostName(baseUrl);
+    var coverHost = hostName(url);
+    return !!baseHost && baseHost === coverHost;
+  }
+
+  function focusCenter(item) {
+    return {
+      x: item.left + item.width / 2,
+      y: item.top + item.height / 2
+    };
+  }
+
+  function sameFocusRow(a, b) {
+    var ay = a.top + a.height / 2;
+    var by = b.top + b.height / 2;
+    var limit = Math.max(a.height, b.height) / 2;
+    if (limit < 8) limit = 8;
+    return Math.abs(ay - by) <= limit;
+  }
+
+  function nearestInDirection(current, pool, direction) {
+    var origin = focusCenter(current);
+    var best = null;
+    var bestScore = Infinity;
+    for (var i = 0; i < pool.length; i++) {
+      var item = pool[i];
+      if (item.id === current.id) continue;
+      var point = focusCenter(item);
+      var dx = point.x - origin.x;
+      var dy = point.y - origin.y;
+      if (direction === "up" && dy >= -4) continue;
+      if (direction === "down" && dy <= 4) continue;
+      if (direction === "left" && dx >= -4) continue;
+      if (direction === "right" && dx <= 4) continue;
+      var primary = direction === "up" || direction === "down" ? Math.abs(dy) : Math.abs(dx);
+      var secondary = direction === "up" || direction === "down" ? Math.abs(dx) : Math.abs(dy);
+      var score = primary * 100 + secondary;
+      if (score < bestScore) {
+        bestScore = score;
+        best = item.id;
+      }
+    }
+    return best;
+  }
+
+  function nextFocusTarget(items, currentId, direction) {
+    var list = items || [];
+    var current = null;
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (list[i].id === currentId) current = list[i];
+    }
+    if (!current) return list.length ? list[0].id : null;
+    var zone = current.zone || "page";
+    if (direction === "down" && zone === "footer") return current.id;
+    var pool = [];
+    if (direction === "left" || direction === "right") {
+      for (i = 0; i < list.length; i++) {
+        if ((list[i].zone || "page") !== zone) continue;
+        if (!sameFocusRow(current, list[i])) continue;
+        pool.push(list[i]);
+      }
+      return nearestInDirection(current, pool, direction) || current.id;
+    }
+    if (direction === "up" && zone === "footer") {
+      var hasGrid = false;
+      for (i = 0; i < list.length; i++) if (list[i].zone === "grid") hasGrid = true;
+      var want = hasGrid ? "grid" : "page";
+      for (i = 0; i < list.length; i++) if ((list[i].zone || "page") === want) pool.push(list[i]);
+      return nearestInDirection(current, pool, direction) || current.id;
+    }
+    for (i = 0; i < list.length; i++) {
+      if ((list[i].zone || "page") !== zone) continue;
+      pool.push(list[i]);
+    }
+    var inside = nearestInDirection(current, pool, direction);
+    if (inside) return inside;
+    if (direction !== "down") return current.id;
+    var footer = [];
+    for (i = 0; i < list.length; i++) if (list[i].zone === "footer") footer.push(list[i]);
+    return nearestInDirection(current, footer, direction) || current.id;
+  }
+
+  function normalizeTheme(value) {
+    return value === "dark" ? "dark" : "bright";
+  }
+
+  function scraperReady(creds) {
+    creds = creds || {};
+    var user = trimText(creds.ssUser);
+    var pass = trimText(creds.ssPassword);
+    var devId = trimText(creds.ssDevId);
+    var devPass = trimText(creds.ssDevPassword);
+    return {
+      screenscraper: !!(user && pass && devId && devPass),
+      steamgrid: !!trimText(creds.sgdbKey),
+      partialScreenScraper: !!(user || pass || devId || devPass) && !(user && pass && devId && devPass)
+    };
+  }
+
+  function screenScraperQuery(creds, extra) {
+    var parts = [
+      "devid=" + encodeURIComponent(trimText(creds.ssDevId)),
+      "devpassword=" + encodeURIComponent(trimText(creds.ssDevPassword)),
+      "softname=CocoonRommShelf",
+      "output=json",
+      "ssid=" + encodeURIComponent(trimText(creds.ssUser)),
+      "sspassword=" + encodeURIComponent(trimText(creds.ssPassword))
+    ];
+    var keys = extra ? Object.keys(extra) : [];
+    for (var i = 0; i < keys.length; i++) parts.push(keys[i] + "=" + encodeURIComponent(extra[keys[i]]));
+    return parts.join("&");
+  }
+
+  function screenScraperInfosUrl(creds, fileName) {
+    return "https://api.screenscraper.fr/api2/jeuInfos.php?" + screenScraperQuery(creds, { romnom: fileName || "" });
+  }
+
+  function screenScraperSearchUrl(creds, name) {
+    return "https://api.screenscraper.fr/api2/jeuRecherche.php?" + screenScraperQuery(creds, { recherche: name || "" });
+  }
+
+  function steamGridSearchUrl(name) {
+    return "https://www.steamgriddb.com/api/v2/search/autocomplete/" + encodeURIComponent(name || "");
+  }
+
+  function steamGridGridsUrl(id) {
+    return "https://www.steamgriddb.com/api/v2/grids/game/" + encodeURIComponent(String(id)) + "?dimensions=600x900,342x482,660x930";
+  }
+
+  function screenScraperMedias(payload) {
+    if (!payload || !payload.response) return [];
+    if (payload.response.jeu && payload.response.jeu.medias) return payload.response.jeu.medias;
+    var jeux = payload.response.jeux;
+    if (jeux && jeux.length && jeux[0].medias) return jeux[0].medias;
+    return [];
+  }
+
+  function pickScreenScraperCover(payload) {
+    var medias = screenScraperMedias(payload);
+    var ranks = { "box-2d": 1, "box-3d": 2, mixrbv2: 3, mixrbv1: 4 };
+    var best = "";
+    var bestRank = 99;
+    for (var i = 0; i < medias.length; i++) {
+      var type = String(medias[i].type || "").toLowerCase();
+      var rank = ranks[type];
+      var url = medias[i].url || "";
+      if (!rank || !url) continue;
+      if (rank < bestRank) {
+        bestRank = rank;
+        best = url;
+      }
+    }
+    return best;
+  }
+
+  function pickSteamGridGameId(payload) {
+    var data = payload && payload.data;
+    if (!data || !data.length || data[0].id == null) return null;
+    return data[0].id;
+  }
+
+  function pickSteamGridCover(payload) {
+    var data = payload && payload.data;
+    if (!data || !data.length) return "";
+    return data[0].url || data[0].thumb || "";
+  }
+
+  function cocoonCoverSidecar() {
+    return null;
+  }
+
+  function scrapeResult(phase, request, imageUrl, message) {
+    return { phase: phase, request: request, imageUrl: imageUrl || "", message: message || "" };
+  }
+
+  function scrapeStart(creds, rom) {
+    var ready = scraperReady(creds);
+    var fileName = rom ? (rom.fs_name || rom.name || "") : "";
+    var name = rom ? (rom.name || rom.fs_name || "") : "";
+    if (ready.screenscraper && fileName) {
+      return scrapeResult("ss-infos", { url: screenScraperInfosUrl(creds, fileName), bearer: "" }, "", "");
+    }
+    if (ready.screenscraper && name) {
+      return scrapeResult("ss-search", { url: screenScraperSearchUrl(creds, name), bearer: "" }, "", "");
+    }
+    if (ready.steamgrid && name) {
+      return scrapeResult("sg-search", { url: steamGridSearchUrl(name), bearer: trimText(creds.sgdbKey) }, "", "");
+    }
+    if (ready.partialScreenScraper) {
+      return scrapeResult("done", null, "", "ScreenScraper needs a user, password, devid, and dev password.");
+    }
+    return scrapeResult("done", null, "", "Add ScreenScraper or SteamGridDB in Settings.");
+  }
+
+  function scrapeAdvance(step, payload, creds, rom) {
+    var ready = scraperReady(creds);
+    var name = rom ? (rom.name || rom.fs_name || "") : "";
+    var phase = step && step.phase;
+    if (phase === "ss-infos" || phase === "ss-search") {
+      var found = pickScreenScraperCover(payload);
+      if (found) return scrapeResult("done", null, found, "");
+      if (phase === "ss-infos" && ready.screenscraper && name) {
+        return scrapeResult("ss-search", { url: screenScraperSearchUrl(creds, name), bearer: "" }, "", "");
+      }
+    }
+    if (phase === "sg-search") {
+      var gameId = pickSteamGridGameId(payload);
+      if (gameId != null) return scrapeResult("sg-grids", { url: steamGridGridsUrl(gameId), bearer: trimText(creds.sgdbKey) }, "", "");
+    }
+    if (phase === "sg-grids") {
+      var grid = pickSteamGridCover(payload);
+      if (grid) return scrapeResult("done", null, grid, "");
+    }
+    if ((phase === "ss-infos" || phase === "ss-search") && ready.steamgrid && name) {
+      return scrapeResult("sg-search", { url: steamGridSearchUrl(name), bearer: trimText(creds.sgdbKey) }, "", "");
+    }
+    return scrapeResult("done", null, "", "No artwork found.");
   }
 
   function normalizeRomPage(payload) {
@@ -690,6 +1021,22 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     isPairCode: isPairCode,
     isClientToken: isClientToken,
     coverUrl: coverUrl,
+    romCoverCandidates: romCoverCandidates,
+    coverRequestUrls: coverRequestUrls,
+    coverNeedsAuth: coverNeedsAuth,
+    nextFocusTarget: nextFocusTarget,
+    normalizeTheme: normalizeTheme,
+    scraperReady: scraperReady,
+    screenScraperInfosUrl: screenScraperInfosUrl,
+    screenScraperSearchUrl: screenScraperSearchUrl,
+    steamGridSearchUrl: steamGridSearchUrl,
+    steamGridGridsUrl: steamGridGridsUrl,
+    pickScreenScraperCover: pickScreenScraperCover,
+    pickSteamGridGameId: pickSteamGridGameId,
+    pickSteamGridCover: pickSteamGridCover,
+    cocoonCoverSidecar: cocoonCoverSidecar,
+    scrapeStart: scrapeStart,
+    scrapeAdvance: scrapeAdvance,
     normalizeRomPage: normalizeRomPage,
     lookupPlatform: lookupPlatform
   };
@@ -702,7 +1049,6 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     var doc = host.document;
     var map = loadMap(host);
     var memoryPlatforms = null;
-    var coverSeq = 0;
     var coverObserver = null;
     var lastHardware = { name: "", at: 0 };
     var state = {
@@ -719,7 +1065,9 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       gamesTotal: null,
       romsById: {},
       searchOpen: false,
-      pendingRescan: ""
+      pendingRescan: "",
+      theme: "bright",
+      scrape: null
     };
 
     var fallback = doc.getElementById("boot-fallback");
@@ -783,36 +1131,38 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     }
 
     function moveFocus(direction) {
-      var items = focusables();
-      if (!items.length) return;
+      var nodes = focusables();
+      if (!nodes.length) return;
       var current = doc.querySelector(".is-focused");
       if (!current || !isVisible(current)) {
-        setFocus(items[0], false);
+        setFocus(nodes[0], false);
         return;
       }
-      var rect = current.getBoundingClientRect();
-      var cx = rect.left + rect.width / 2;
-      var cy = rect.top + rect.height / 2;
-      var best = null;
-      var bestScore = Infinity;
-      for (var i = 0; i < items.length; i++) {
-        var el = items[i];
-        if (el === current) continue;
-        var r = el.getBoundingClientRect();
-        var dx = r.left + r.width / 2 - cx;
-        var dy = r.top + r.height / 2 - cy;
-        if (direction === "up" && dy >= -4) continue;
-        if (direction === "down" && dy <= 4) continue;
-        if (direction === "left" && dx >= -4) continue;
-        if (direction === "right" && dx <= 4) continue;
-        var primary = direction === "up" || direction === "down" ? Math.abs(dy) : Math.abs(dx);
-        var secondary = direction === "up" || direction === "down" ? Math.abs(dx) : Math.abs(dy);
-        if (primary * 100 + secondary < bestScore) {
-          bestScore = primary * 100 + secondary;
-          best = el;
+      var records = [];
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        var rect = el.getBoundingClientRect();
+        var id = el.getAttribute("data-focus-id") || el.id;
+        if (!id) continue;
+        records.push({
+          id: id,
+          zone: el.getAttribute("data-zone") || "page",
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height
+        });
+      }
+      var currentId = current.getAttribute("data-focus-id") || current.id;
+      var nextId = nextFocusTarget(records, currentId, direction);
+      if (!nextId || nextId === currentId) return;
+      for (var j = 0; j < nodes.length; j++) {
+        var nid = nodes[j].getAttribute("data-focus-id") || nodes[j].id;
+        if (nid === nextId) {
+          setFocus(nodes[j], false);
+          return;
         }
       }
-      if (best) setFocus(best, false);
     }
 
     function showScreen(name) {
@@ -894,6 +1244,8 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       btn.className = "card";
       btn.setAttribute("data-card", "1");
       btn.setAttribute("data-focus", "1");
+      btn.setAttribute("data-zone", "grid");
+      btn.setAttribute("data-focus-id", "card-" + id);
       btn.setAttribute("data-id", id);
       var heading = doc.createElement("span");
       heading.className = "card-title";
@@ -927,10 +1279,13 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
 
     function watchCover(img) {
       if (!host.RommNative || !host.RommNative.fetchCover) return;
-      var url = img.getAttribute("data-cover");
-      if (!url) return;
+      var urls = img.getAttribute("data-cover-urls");
+      if (!urls) return;
+      function run() {
+        host.RommNative.fetchCover(Number(img.getAttribute("data-cover-id")), urls);
+      }
       if (typeof host.IntersectionObserver !== "function") {
-        host.RommNative.fetchCover(Number(img.getAttribute("data-cover-id")), url);
+        run();
         return;
       }
       if (!coverObserver) {
@@ -939,29 +1294,43 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
             if (!entries[i].isIntersecting) continue;
             var node = entries[i].target;
             coverObserver.unobserve(node);
-            var cover = node.getAttribute("data-cover");
-            if (cover) host.RommNative.fetchCover(Number(node.getAttribute("data-cover-id")), cover);
+            var queued = node.getAttribute("data-cover-urls");
+            if (queued) host.RommNative.fetchCover(Number(node.getAttribute("data-cover-id")), queued);
           }
-        }, { root: doc.getElementById("screen-games") });
+        }, { root: null });
       }
       coverObserver.observe(img);
     }
 
+    function paintCover(img, rom, size) {
+      if (!img) return;
+      img.setAttribute("data-cover-id", String(rom.id));
+      if (rom.shelfCover) {
+        img.src = rom.shelfCover;
+        img.hidden = false;
+        return;
+      }
+      var urls = state.session ? coverRequestUrls(state.session.baseUrl, rom, size) : [];
+      if (!urls.length) {
+        img.removeAttribute("src");
+        img.hidden = true;
+        return;
+      }
+      img.hidden = false;
+      img.setAttribute("data-cover", urls[0]);
+      img.setAttribute("data-cover-urls", JSON.stringify(urls));
+      watchCover(img);
+    }
+
     function gameCard(rom) {
       var btn = makeButton(String(rom.id), rom.name || rom.fs_name || "Game", rom.fs_name || "");
-      var url = state.session ? coverUrl(state.session.baseUrl, rom) : "";
-      if (url) {
-        var img = doc.createElement("img");
-        img.className = "cover";
-        img.alt = "";
-        img.width = 72;
-        img.height = 96;
-        coverSeq += 1;
-        img.setAttribute("data-cover-id", String(coverSeq));
-        img.setAttribute("data-cover", url);
-        btn.insertBefore(img, btn.firstChild);
-        watchCover(img);
-      }
+      var img = doc.createElement("img");
+      img.className = "cover";
+      img.alt = "";
+      img.width = 72;
+      img.height = 96;
+      btn.insertBefore(img, btn.firstChild);
+      paintCover(img, rom, "small");
       btn.addEventListener("click", function () { openGame(rom); });
       return btn;
     }
@@ -1045,6 +1414,13 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       });
     }
 
+    function showCoverNote(visible) {
+      var note = doc.getElementById("cover-note");
+      if (!note) return;
+      note.hidden = !visible;
+      note.textContent = visible ? "Cover stays in this app. CocoonFE does not document a cover file Cocoon scans." : "";
+    }
+
     function openGame(rom) {
       state.game = rom;
       state.returnScreen = "games";
@@ -1054,6 +1430,8 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       doc.getElementById("game-title").textContent = rom.name || rom.fs_name || "Game";
       doc.getElementById("game-file").textContent = rom.fs_name || fileName;
       doc.getElementById("game-dest").textContent = dest.folderName + "/" + fileName;
+      paintCover(doc.getElementById("game-cover"), rom, "large");
+      showCoverNote(!!rom.shelfCover || romCoverCandidates(rom, "large").length > 0);
       var note = doc.getElementById("rescan-note");
       if (note) {
         note.hidden = true;
@@ -1249,6 +1627,95 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       setStatus(layout === "romm" ? "New files use RomM folder names." : layout === "alias" ? "New files use a folder that already exists." : "New files use Cocoon folder names.");
     }
 
+    function applyTheme(theme) {
+      state.theme = normalizeTheme(theme);
+      doc.documentElement.setAttribute("data-theme", state.theme);
+      var bright = doc.getElementById("btn-theme-bright");
+      var dark = doc.getElementById("btn-theme-dark");
+      if (bright) bright.classList.toggle("is-selected", state.theme === "bright");
+      if (dark) dark.classList.toggle("is-selected", state.theme === "dark");
+    }
+
+    function chooseTheme(theme) {
+      applyTheme(theme);
+      native("saveTheme", state.theme);
+    }
+
+    function fieldValue(id) {
+      var el = doc.getElementById(id);
+      return el ? el.value : "";
+    }
+
+    function setField(id, value) {
+      var el = doc.getElementById(id);
+      if (el) el.value = value || "";
+    }
+
+    function scraperFromSession(session) {
+      session = session || {};
+      return {
+        ssUser: session.ssUser || "",
+        ssPassword: session.ssPassword || "",
+        ssDevId: session.ssDevId || "",
+        ssDevPassword: session.ssDevPassword || "",
+        sgdbKey: session.sgdbKey || ""
+      };
+    }
+
+    function fillScraperForm(session) {
+      var creds = scraperFromSession(session);
+      setField("ss-user", creds.ssUser);
+      setField("ss-password", creds.ssPassword);
+      setField("ss-devid", creds.ssDevId);
+      setField("ss-devpassword", creds.ssDevPassword);
+      setField("sgdb-key", creds.sgdbKey);
+    }
+
+    function readScraperForm() {
+      return {
+        ssUser: fieldValue("ss-user"),
+        ssPassword: fieldValue("ss-password"),
+        ssDevId: fieldValue("ss-devid"),
+        ssDevPassword: fieldValue("ss-devpassword"),
+        sgdbKey: fieldValue("sgdb-key")
+      };
+    }
+
+    function saveScraperForm() {
+      var creds = readScraperForm();
+      if (!state.session) state.session = {};
+      state.session.ssUser = creds.ssUser;
+      state.session.ssPassword = creds.ssPassword;
+      state.session.ssDevId = creds.ssDevId;
+      state.session.ssDevPassword = creds.ssDevPassword;
+      state.session.sgdbKey = creds.sgdbKey;
+      native("saveScraper", creds.ssUser, creds.ssPassword, creds.ssDevId, creds.ssDevPassword, creds.sgdbKey);
+      setStatus("Artwork accounts saved on this device.");
+    }
+
+    function clearScraperForm() {
+      fillScraperForm({});
+      if (state.session) {
+        state.session.ssUser = "";
+        state.session.ssPassword = "";
+        state.session.ssDevId = "";
+        state.session.ssDevPassword = "";
+        state.session.sgdbKey = "";
+      }
+      native("clearScraper");
+      setStatus("Artwork accounts cleared.");
+    }
+
+    function startScrape(rom) {
+      if (!rom) { setStatus("Open a game, then scrape artwork."); return; }
+      var creds = state.session ? scraperFromSession(state.session) : readScraperForm();
+      var step = scrapeStart(creds, rom);
+      if (!step.request) { setStatus(step.message); return; }
+      state.scrape = { seq: (state.scrape && state.scrape.seq ? state.scrape.seq : 0) + 1, rom: rom, step: step, creds: creds };
+      setStatus("Scraping artwork…");
+      native("fetchText", state.scrape.seq, step.request.url, step.request.bearer || "");
+    }
+
     shelf.onHardwareKey = onHardwareKey;
     shelf.onDownloadProgress = function (text) {
       var el = doc.getElementById("download-progress");
@@ -1267,8 +1734,35 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     shelf.onLoggedOut = function (message) { forceLogout(message); };
     shelf.onCover = function (id, dataUrl) {
       if (!dataUrl) return;
-      var img = doc.querySelector('img[data-cover-id="' + id + '"]');
-      if (img) img.src = dataUrl;
+      var key = String(id);
+      var rom = state.romsById[key];
+      if (rom) rom.shelfCover = dataUrl;
+      if (state.game && String(state.game.id) === key) state.game.shelfCover = dataUrl;
+      var nodes = doc.querySelectorAll('img[data-cover-id="' + key + '"]');
+      for (var i = 0; i < nodes.length; i++) {
+        nodes[i].hidden = false;
+        nodes[i].src = dataUrl;
+      }
+      if (state.screen === "game" && state.game && String(state.game.id) === key) showCoverNote(true);
+    };
+    shelf.onText = function (id, status, body) {
+      if (!state.scrape || state.scrape.seq !== id) return;
+      var payload = null;
+      if (status >= 200 && status < 300 && body) {
+        try { payload = JSON.parse(body); } catch (err) { payload = null; }
+      }
+      var next = scrapeAdvance(state.scrape.step, payload, state.scrape.creds, state.scrape.rom);
+      state.scrape.step = next;
+      if (next.imageUrl) {
+        native("fetchCover", Number(state.scrape.rom.id), JSON.stringify([next.imageUrl]));
+        setStatus("Artwork found.");
+        return;
+      }
+      if (next.request) {
+        native("fetchText", id, next.request.url, next.request.bearer || "");
+        return;
+      }
+      setStatus(next.message || "No artwork found.");
     };
     shelf.onRomRoot = function (label) {
       var el = doc.getElementById("rom-root-label");
@@ -1286,6 +1780,7 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       refreshFolders();
       showScreen("settings");
       paintLayout();
+      fillScraperForm(state.session);
       focusDefault();
     });
     doc.getElementById("btn-rom-root").addEventListener("click", function () { native("pickRomRoot"); });
@@ -1293,6 +1788,11 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     doc.getElementById("btn-layout-romm").addEventListener("click", function () { chooseLayout("romm"); });
     doc.getElementById("btn-layout-alias").addEventListener("click", function () { chooseLayout("alias"); });
     doc.getElementById("btn-logout").addEventListener("click", logout);
+    doc.getElementById("btn-theme-bright").addEventListener("click", function () { chooseTheme("bright"); });
+    doc.getElementById("btn-theme-dark").addEventListener("click", function () { chooseTheme("dark"); });
+    doc.getElementById("btn-save-scraper").addEventListener("click", saveScraperForm);
+    doc.getElementById("btn-clear-scraper").addEventListener("click", clearScraperForm);
+    doc.getElementById("btn-scrape").addEventListener("click", function () { startScrape(state.game); });
     doc.getElementById("game-card").addEventListener("click", function () { startDownload(state.game); });
     doc.getElementById("search-input").addEventListener("input", function (event) {
       if (state.screen !== "platforms") {
@@ -1324,6 +1824,8 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     } catch (err) { session = null; }
     state.layout = session && session.layout ? session.layout : "cocoon";
     state.session = session && session.token ? session : null;
+    applyTheme(session && session.theme);
+    if (session) fillScraperForm(session);
     paintLayout();
     var rootLabel = doc.getElementById("rom-root-label");
     if (rootLabel) rootLabel.textContent = session && session.romRootLabel ? session.romRootLabel : "No folder chosen";

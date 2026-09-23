@@ -81,6 +81,38 @@ public final class RommBridge {
                 .remove("token")
                 .remove("refreshToken")
                 .remove("expiresAt")
+                .remove("ssUser")
+                .remove("ssPassword")
+                .remove("ssDevId")
+                .remove("ssDevPassword")
+                .remove("sgdbKey")
+                .apply();
+    }
+
+    @JavascriptInterface
+    public void saveTheme(String theme) {
+        prefs.edit().putString("theme", "dark".equals(theme) ? "dark" : "bright").apply();
+    }
+
+    @JavascriptInterface
+    public void saveScraper(String user, String pass, String devId, String devPass, String sgdbKey) {
+        prefs.edit()
+                .putString("ssUser", user == null ? "" : user)
+                .putString("ssPassword", pass == null ? "" : pass)
+                .putString("ssDevId", devId == null ? "" : devId)
+                .putString("ssDevPassword", devPass == null ? "" : devPass)
+                .putString("sgdbKey", sgdbKey == null ? "" : sgdbKey)
+                .apply();
+    }
+
+    @JavascriptInterface
+    public void clearScraper() {
+        prefs.edit()
+                .remove("ssUser")
+                .remove("ssPassword")
+                .remove("ssDevId")
+                .remove("ssDevPassword")
+                .remove("sgdbKey")
                 .apply();
     }
 
@@ -209,16 +241,44 @@ public final class RommBridge {
     }
 
     @JavascriptInterface
-    public void fetchCover(final int id, final String url) {
+    public void fetchCover(final int id, final String urlsJson) {
         io.execute(() -> {
             try {
-                HttpResult result = authed("GET", url);
-                if (!result.ok() || result.bytes == null || result.bytes.length == 0) return;
-                String mime = sniff(result.bytes);
-                String data = "data:" + mime + ";base64," + Base64.encodeToString(result.bytes, Base64.NO_WRAP);
-                emit("CocoonShelf.onCover(" + id + "," + JSONObject.quote(data) + ")");
+                JSONArray urls = parseUrlList(urlsJson);
+                String base = base();
+                for (int i = 0; i < urls.length(); i++) {
+                    String url = urls.optString(i, "");
+                    if (url.isEmpty()) continue;
+                    boolean auth = sameHost(base, url);
+                    HttpResult result = send("GET", url, null, null, auth, null);
+                    if (auth && (result.status == 401 || result.status == 403)) {
+                        result = send("GET", url, null, null, false, null);
+                    }
+                    if (!result.ok() || result.bytes == null || result.bytes.length == 0 || result.bytes.length > 2000000) {
+                        continue;
+                    }
+                    String mime = imageType(result);
+                    if (mime.isEmpty()) continue;
+                    String data = "data:" + mime + ";base64," + Base64.encodeToString(result.bytes, Base64.NO_WRAP);
+                    emit("CocoonShelf.onCover(" + id + "," + JSONObject.quote(data) + ")");
+                    return;
+                }
             } catch (Exception ignored) {
                 /* a missing cover leaves the empty frame */
+            }
+        });
+    }
+
+    @JavascriptInterface
+    public void fetchText(final int id, final String url, final String bearer) {
+        io.execute(() -> {
+            try {
+                HttpResult result = send("GET", url, null, null, false, bearer);
+                String body = result.body == null ? "" : result.body;
+                if (body.length() > 200000) body = body.substring(0, 200000);
+                emit("CocoonShelf.onText(" + id + "," + result.status + "," + JSONObject.quote(body) + ")");
+            } catch (Exception err) {
+                emit("CocoonShelf.onText(" + id + ",0,\"\")");
             }
         });
     }
@@ -348,21 +408,29 @@ public final class RommBridge {
     }
 
     private HttpResult send(String method, String url, String body, String contentType, boolean withAuth) {
+        return send(method, url, body, contentType, withAuth, null);
+    }
+
+    private HttpResult send(String method, String url, String body, String contentType, boolean withAuth, String bearer) {
         HttpResult result = new HttpResult();
         HttpURLConnection conn = null;
         try {
-            conn = open(url, method, body, contentType, withAuth);
+            conn = open(url, method, body, contentType, withAuth, bearer);
             result.status = conn.getResponseCode();
             int hops = 0;
+            String current = url;
             while (result.status >= 300 && result.status < 400 && hops < 3) {
                 String location = conn.getHeaderField("Location");
                 if (location == null || location.isEmpty()) break;
-                URL next = new URL(new URL(url), location);
+                URL next = new URL(new URL(current), location);
+                boolean stay = sameHost(current, next.toString());
                 conn.disconnect();
-                conn = open(next.toString(), method, null, null, withAuth && sameHost(url, next.toString()));
+                current = next.toString();
+                conn = open(current, method, null, null, withAuth && stay, stay ? bearer : null);
                 result.status = conn.getResponseCode();
                 hops += 1;
             }
+            result.contentType = conn.getContentType();
             InputStream stream = result.status >= 400 ? conn.getErrorStream() : conn.getInputStream();
             result.bytes = readBytes(stream);
             result.body = new String(result.bytes, StandardCharsets.UTF_8);
@@ -378,13 +446,19 @@ public final class RommBridge {
     }
 
     private HttpURLConnection open(String url, String method, String body, String contentType, boolean withAuth) throws Exception {
+        return open(url, method, body, contentType, withAuth, null);
+    }
+
+    private HttpURLConnection open(String url, String method, String body, String contentType, boolean withAuth, String bearer) throws Exception {
         HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
         conn.setConnectTimeout(20000);
         conn.setReadTimeout(120000);
         conn.setInstanceFollowRedirects(false);
         conn.setRequestMethod(method);
         boolean tokenEndpoint = url.contains("/api/token");
-        if (withAuth && !tokenEndpoint) {
+        if (bearer != null && !bearer.isEmpty()) {
+            conn.setRequestProperty("Authorization", "Bearer " + bearer);
+        } else if (withAuth && !tokenEndpoint) {
             String token = prefs.getString("token", "");
             if (token != null && !token.isEmpty()) conn.setRequestProperty("Authorization", "Bearer " + token);
         }
@@ -416,6 +490,12 @@ public final class RommBridge {
             session.put("refreshToken", prefs.getString("refreshToken", ""));
             session.put("expiresAt", prefs.getLong("expiresAt", 0L));
             session.put("layout", prefs.getString("layout", "cocoon"));
+            session.put("theme", "dark".equals(prefs.getString("theme", "bright")) ? "dark" : "bright");
+            session.put("ssUser", prefs.getString("ssUser", ""));
+            session.put("ssPassword", prefs.getString("ssPassword", ""));
+            session.put("ssDevId", prefs.getString("ssDevId", ""));
+            session.put("ssDevPassword", prefs.getString("ssDevPassword", ""));
+            session.put("sgdbKey", prefs.getString("sgdbKey", ""));
             session.put("romRootLabel", prefs.getString("romRootLabel", ""));
             session.put("hasRomRoot", !prefs.getString("romRootUri", "").isEmpty());
         } catch (JSONException ignored) {
@@ -543,11 +623,33 @@ public final class RommBridge {
     }
 
     private static String sniff(byte[] bytes) {
+        if (bytes == null) return "";
         if (bytes.length >= 8 && bytes[0] == (byte) 0x89 && bytes[1] == 0x50) return "image/png";
         if (bytes.length >= 3 && bytes[0] == (byte) 0xFF && bytes[1] == (byte) 0xD8) return "image/jpeg";
         if (bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F') return "image/webp";
         if (bytes.length >= 4 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') return "image/gif";
-        return "image/jpeg";
+        return "";
+    }
+
+    private static String imageType(HttpResult result) {
+        String sniffed = sniff(result.bytes);
+        if (!sniffed.isEmpty()) return sniffed;
+        if (result.contentType != null && result.contentType.startsWith("image/")) {
+            int semi = result.contentType.indexOf(';');
+            return semi > 0 ? result.contentType.substring(0, semi) : result.contentType;
+        }
+        return "";
+    }
+
+    private static JSONArray parseUrlList(String urlsJson) {
+        if (urlsJson == null || urlsJson.isEmpty()) return new JSONArray();
+        try {
+            return new JSONArray(urlsJson);
+        } catch (JSONException err) {
+            JSONArray one = new JSONArray();
+            if (urlsJson.startsWith("http")) one.put(urlsJson);
+            return one;
+        }
     }
 
     private static String formatBytes(long n) {
@@ -561,6 +663,7 @@ public final class RommBridge {
         int status;
         String body = "";
         String error;
+        String contentType;
         byte[] bytes = new byte[0];
         boolean logout;
 

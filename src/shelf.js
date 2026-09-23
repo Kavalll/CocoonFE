@@ -316,10 +316,268 @@
     return String(token || "").replace(/^\s+|\s+$/g, "").indexOf("rmm_") === 0;
   }
 
+  function trimText(value) {
+    return String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
+  }
+
+  function coverField(rom, key) {
+    if (!rom) return "";
+    return trimText(rom[key]);
+  }
+
+  function romCoverCandidates(rom, size) {
+    var small = coverField(rom, "path_cover_small");
+    var large = coverField(rom, "path_cover_large");
+    var external = coverField(rom, "url_cover");
+    var ordered = size === "large" ? [large, small, external] : [small, large, external];
+    var seen = {};
+    var out = [];
+    for (var i = 0; i < ordered.length; i++) {
+      if (!ordered[i] || seen[ordered[i]]) continue;
+      seen[ordered[i]] = true;
+      out.push(ordered[i]);
+    }
+    return out;
+  }
+
   function coverUrl(baseUrl, rom) {
-    var path = rom.url_cover || rom.path_cover_small || rom.path_cover_large || "";
-    if (!path) return "";
-    return absoluteUrl(baseUrl, path);
+    var paths = romCoverCandidates(rom, "small");
+    if (!paths.length) return "";
+    return absoluteUrl(baseUrl, paths[0]);
+  }
+
+  function coverRequestUrls(baseUrl, rom, size) {
+    var paths = romCoverCandidates(rom, size);
+    var out = [];
+    for (var i = 0; i < paths.length; i++) out.push(absoluteUrl(baseUrl, paths[i]));
+    return out;
+  }
+
+  function hostName(url) {
+    var match = String(url || "").match(/^https?:\/\/([^\/?#]+)/i);
+    if (!match) return "";
+    return match[1].split(":")[0].toLowerCase();
+  }
+
+  function coverNeedsAuth(baseUrl, url) {
+    var baseHost = hostName(baseUrl);
+    var coverHost = hostName(url);
+    return !!baseHost && baseHost === coverHost;
+  }
+
+  function focusCenter(item) {
+    return {
+      x: item.left + item.width / 2,
+      y: item.top + item.height / 2
+    };
+  }
+
+  function sameFocusRow(a, b) {
+    var ay = a.top + a.height / 2;
+    var by = b.top + b.height / 2;
+    var limit = Math.max(a.height, b.height) / 2;
+    if (limit < 8) limit = 8;
+    return Math.abs(ay - by) <= limit;
+  }
+
+  function nearestInDirection(current, pool, direction) {
+    var origin = focusCenter(current);
+    var best = null;
+    var bestScore = Infinity;
+    for (var i = 0; i < pool.length; i++) {
+      var item = pool[i];
+      if (item.id === current.id) continue;
+      var point = focusCenter(item);
+      var dx = point.x - origin.x;
+      var dy = point.y - origin.y;
+      if (direction === "up" && dy >= -4) continue;
+      if (direction === "down" && dy <= 4) continue;
+      if (direction === "left" && dx >= -4) continue;
+      if (direction === "right" && dx <= 4) continue;
+      var primary = direction === "up" || direction === "down" ? Math.abs(dy) : Math.abs(dx);
+      var secondary = direction === "up" || direction === "down" ? Math.abs(dx) : Math.abs(dy);
+      var score = primary * 100 + secondary;
+      if (score < bestScore) {
+        bestScore = score;
+        best = item.id;
+      }
+    }
+    return best;
+  }
+
+  function nextFocusTarget(items, currentId, direction) {
+    var list = items || [];
+    var current = null;
+    var i;
+    for (i = 0; i < list.length; i++) {
+      if (list[i].id === currentId) current = list[i];
+    }
+    if (!current) return list.length ? list[0].id : null;
+    var zone = current.zone || "page";
+    if (direction === "down" && zone === "footer") return current.id;
+    var pool = [];
+    if (direction === "left" || direction === "right") {
+      for (i = 0; i < list.length; i++) {
+        if ((list[i].zone || "page") !== zone) continue;
+        if (!sameFocusRow(current, list[i])) continue;
+        pool.push(list[i]);
+      }
+      return nearestInDirection(current, pool, direction) || current.id;
+    }
+    if (direction === "up" && zone === "footer") {
+      var hasGrid = false;
+      for (i = 0; i < list.length; i++) if (list[i].zone === "grid") hasGrid = true;
+      var want = hasGrid ? "grid" : "page";
+      for (i = 0; i < list.length; i++) if ((list[i].zone || "page") === want) pool.push(list[i]);
+      return nearestInDirection(current, pool, direction) || current.id;
+    }
+    for (i = 0; i < list.length; i++) {
+      if ((list[i].zone || "page") !== zone) continue;
+      pool.push(list[i]);
+    }
+    var inside = nearestInDirection(current, pool, direction);
+    if (inside) return inside;
+    if (direction !== "down") return current.id;
+    var footer = [];
+    for (i = 0; i < list.length; i++) if (list[i].zone === "footer") footer.push(list[i]);
+    return nearestInDirection(current, footer, direction) || current.id;
+  }
+
+  function normalizeTheme(value) {
+    return value === "dark" ? "dark" : "bright";
+  }
+
+  function scraperReady(creds) {
+    creds = creds || {};
+    var user = trimText(creds.ssUser);
+    var pass = trimText(creds.ssPassword);
+    var devId = trimText(creds.ssDevId);
+    var devPass = trimText(creds.ssDevPassword);
+    return {
+      screenscraper: !!(user && pass && devId && devPass),
+      steamgrid: !!trimText(creds.sgdbKey),
+      partialScreenScraper: !!(user || pass || devId || devPass) && !(user && pass && devId && devPass)
+    };
+  }
+
+  function screenScraperQuery(creds, extra) {
+    var parts = [
+      "devid=" + encodeURIComponent(trimText(creds.ssDevId)),
+      "devpassword=" + encodeURIComponent(trimText(creds.ssDevPassword)),
+      "softname=CocoonRommShelf",
+      "output=json",
+      "ssid=" + encodeURIComponent(trimText(creds.ssUser)),
+      "sspassword=" + encodeURIComponent(trimText(creds.ssPassword))
+    ];
+    var keys = extra ? Object.keys(extra) : [];
+    for (var i = 0; i < keys.length; i++) parts.push(keys[i] + "=" + encodeURIComponent(extra[keys[i]]));
+    return parts.join("&");
+  }
+
+  function screenScraperInfosUrl(creds, fileName) {
+    return "https://api.screenscraper.fr/api2/jeuInfos.php?" + screenScraperQuery(creds, { romnom: fileName || "" });
+  }
+
+  function screenScraperSearchUrl(creds, name) {
+    return "https://api.screenscraper.fr/api2/jeuRecherche.php?" + screenScraperQuery(creds, { recherche: name || "" });
+  }
+
+  function steamGridSearchUrl(name) {
+    return "https://www.steamgriddb.com/api/v2/search/autocomplete/" + encodeURIComponent(name || "");
+  }
+
+  function steamGridGridsUrl(id) {
+    return "https://www.steamgriddb.com/api/v2/grids/game/" + encodeURIComponent(String(id)) + "?dimensions=600x900,342x482,660x930";
+  }
+
+  function screenScraperMedias(payload) {
+    if (!payload || !payload.response) return [];
+    if (payload.response.jeu && payload.response.jeu.medias) return payload.response.jeu.medias;
+    var jeux = payload.response.jeux;
+    if (jeux && jeux.length && jeux[0].medias) return jeux[0].medias;
+    return [];
+  }
+
+  function pickScreenScraperCover(payload) {
+    var medias = screenScraperMedias(payload);
+    var ranks = { "box-2d": 1, "box-3d": 2, mixrbv2: 3, mixrbv1: 4 };
+    var best = "";
+    var bestRank = 99;
+    for (var i = 0; i < medias.length; i++) {
+      var type = String(medias[i].type || "").toLowerCase();
+      var rank = ranks[type];
+      var url = medias[i].url || "";
+      if (!rank || !url) continue;
+      if (rank < bestRank) {
+        bestRank = rank;
+        best = url;
+      }
+    }
+    return best;
+  }
+
+  function pickSteamGridGameId(payload) {
+    var data = payload && payload.data;
+    if (!data || !data.length || data[0].id == null) return null;
+    return data[0].id;
+  }
+
+  function pickSteamGridCover(payload) {
+    var data = payload && payload.data;
+    if (!data || !data.length) return "";
+    return data[0].url || data[0].thumb || "";
+  }
+
+  function cocoonCoverSidecar() {
+    return null;
+  }
+
+  function scrapeResult(phase, request, imageUrl, message) {
+    return { phase: phase, request: request, imageUrl: imageUrl || "", message: message || "" };
+  }
+
+  function scrapeStart(creds, rom) {
+    var ready = scraperReady(creds);
+    var fileName = rom ? (rom.fs_name || rom.name || "") : "";
+    var name = rom ? (rom.name || rom.fs_name || "") : "";
+    if (ready.screenscraper && fileName) {
+      return scrapeResult("ss-infos", { url: screenScraperInfosUrl(creds, fileName), bearer: "" }, "", "");
+    }
+    if (ready.screenscraper && name) {
+      return scrapeResult("ss-search", { url: screenScraperSearchUrl(creds, name), bearer: "" }, "", "");
+    }
+    if (ready.steamgrid && name) {
+      return scrapeResult("sg-search", { url: steamGridSearchUrl(name), bearer: trimText(creds.sgdbKey) }, "", "");
+    }
+    if (ready.partialScreenScraper) {
+      return scrapeResult("done", null, "", "ScreenScraper needs a user, password, devid, and dev password.");
+    }
+    return scrapeResult("done", null, "", "Add ScreenScraper or SteamGridDB in Settings.");
+  }
+
+  function scrapeAdvance(step, payload, creds, rom) {
+    var ready = scraperReady(creds);
+    var name = rom ? (rom.name || rom.fs_name || "") : "";
+    var phase = step && step.phase;
+    if (phase === "ss-infos" || phase === "ss-search") {
+      var found = pickScreenScraperCover(payload);
+      if (found) return scrapeResult("done", null, found, "");
+      if (phase === "ss-infos" && ready.screenscraper && name) {
+        return scrapeResult("ss-search", { url: screenScraperSearchUrl(creds, name), bearer: "" }, "", "");
+      }
+    }
+    if (phase === "sg-search") {
+      var gameId = pickSteamGridGameId(payload);
+      if (gameId != null) return scrapeResult("sg-grids", { url: steamGridGridsUrl(gameId), bearer: trimText(creds.sgdbKey) }, "", "");
+    }
+    if (phase === "sg-grids") {
+      var grid = pickSteamGridCover(payload);
+      if (grid) return scrapeResult("done", null, grid, "");
+    }
+    if ((phase === "ss-infos" || phase === "ss-search") && ready.steamgrid && name) {
+      return scrapeResult("sg-search", { url: steamGridSearchUrl(name), bearer: trimText(creds.sgdbKey) }, "", "");
+    }
+    return scrapeResult("done", null, "", "No artwork found.");
   }
 
   function normalizeRomPage(payload) {
@@ -362,6 +620,22 @@
     isPairCode: isPairCode,
     isClientToken: isClientToken,
     coverUrl: coverUrl,
+    romCoverCandidates: romCoverCandidates,
+    coverRequestUrls: coverRequestUrls,
+    coverNeedsAuth: coverNeedsAuth,
+    nextFocusTarget: nextFocusTarget,
+    normalizeTheme: normalizeTheme,
+    scraperReady: scraperReady,
+    screenScraperInfosUrl: screenScraperInfosUrl,
+    screenScraperSearchUrl: screenScraperSearchUrl,
+    steamGridSearchUrl: steamGridSearchUrl,
+    steamGridGridsUrl: steamGridGridsUrl,
+    pickScreenScraperCover: pickScreenScraperCover,
+    pickSteamGridGameId: pickSteamGridGameId,
+    pickSteamGridCover: pickSteamGridCover,
+    cocoonCoverSidecar: cocoonCoverSidecar,
+    scrapeStart: scrapeStart,
+    scrapeAdvance: scrapeAdvance,
     normalizeRomPage: normalizeRomPage,
     lookupPlatform: lookupPlatform
   };
@@ -374,7 +648,6 @@
     var doc = host.document;
     var map = loadMap(host);
     var memoryPlatforms = null;
-    var coverSeq = 0;
     var coverObserver = null;
     var lastHardware = { name: "", at: 0 };
     var state = {
@@ -391,7 +664,9 @@
       gamesTotal: null,
       romsById: {},
       searchOpen: false,
-      pendingRescan: ""
+      pendingRescan: "",
+      theme: "bright",
+      scrape: null
     };
 
     var fallback = doc.getElementById("boot-fallback");
@@ -455,36 +730,38 @@
     }
 
     function moveFocus(direction) {
-      var items = focusables();
-      if (!items.length) return;
+      var nodes = focusables();
+      if (!nodes.length) return;
       var current = doc.querySelector(".is-focused");
       if (!current || !isVisible(current)) {
-        setFocus(items[0], false);
+        setFocus(nodes[0], false);
         return;
       }
-      var rect = current.getBoundingClientRect();
-      var cx = rect.left + rect.width / 2;
-      var cy = rect.top + rect.height / 2;
-      var best = null;
-      var bestScore = Infinity;
-      for (var i = 0; i < items.length; i++) {
-        var el = items[i];
-        if (el === current) continue;
-        var r = el.getBoundingClientRect();
-        var dx = r.left + r.width / 2 - cx;
-        var dy = r.top + r.height / 2 - cy;
-        if (direction === "up" && dy >= -4) continue;
-        if (direction === "down" && dy <= 4) continue;
-        if (direction === "left" && dx >= -4) continue;
-        if (direction === "right" && dx <= 4) continue;
-        var primary = direction === "up" || direction === "down" ? Math.abs(dy) : Math.abs(dx);
-        var secondary = direction === "up" || direction === "down" ? Math.abs(dx) : Math.abs(dy);
-        if (primary * 100 + secondary < bestScore) {
-          bestScore = primary * 100 + secondary;
-          best = el;
+      var records = [];
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        var rect = el.getBoundingClientRect();
+        var id = el.getAttribute("data-focus-id") || el.id;
+        if (!id) continue;
+        records.push({
+          id: id,
+          zone: el.getAttribute("data-zone") || "page",
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+          height: rect.height
+        });
+      }
+      var currentId = current.getAttribute("data-focus-id") || current.id;
+      var nextId = nextFocusTarget(records, currentId, direction);
+      if (!nextId || nextId === currentId) return;
+      for (var j = 0; j < nodes.length; j++) {
+        var nid = nodes[j].getAttribute("data-focus-id") || nodes[j].id;
+        if (nid === nextId) {
+          setFocus(nodes[j], false);
+          return;
         }
       }
-      if (best) setFocus(best, false);
     }
 
     function showScreen(name) {
@@ -566,6 +843,8 @@
       btn.className = "card";
       btn.setAttribute("data-card", "1");
       btn.setAttribute("data-focus", "1");
+      btn.setAttribute("data-zone", "grid");
+      btn.setAttribute("data-focus-id", "card-" + id);
       btn.setAttribute("data-id", id);
       var heading = doc.createElement("span");
       heading.className = "card-title";
@@ -599,10 +878,13 @@
 
     function watchCover(img) {
       if (!host.RommNative || !host.RommNative.fetchCover) return;
-      var url = img.getAttribute("data-cover");
-      if (!url) return;
+      var urls = img.getAttribute("data-cover-urls");
+      if (!urls) return;
+      function run() {
+        host.RommNative.fetchCover(Number(img.getAttribute("data-cover-id")), urls);
+      }
       if (typeof host.IntersectionObserver !== "function") {
-        host.RommNative.fetchCover(Number(img.getAttribute("data-cover-id")), url);
+        run();
         return;
       }
       if (!coverObserver) {
@@ -611,29 +893,43 @@
             if (!entries[i].isIntersecting) continue;
             var node = entries[i].target;
             coverObserver.unobserve(node);
-            var cover = node.getAttribute("data-cover");
-            if (cover) host.RommNative.fetchCover(Number(node.getAttribute("data-cover-id")), cover);
+            var queued = node.getAttribute("data-cover-urls");
+            if (queued) host.RommNative.fetchCover(Number(node.getAttribute("data-cover-id")), queued);
           }
-        }, { root: doc.getElementById("screen-games") });
+        }, { root: null });
       }
       coverObserver.observe(img);
     }
 
+    function paintCover(img, rom, size) {
+      if (!img) return;
+      img.setAttribute("data-cover-id", String(rom.id));
+      if (rom.shelfCover) {
+        img.src = rom.shelfCover;
+        img.hidden = false;
+        return;
+      }
+      var urls = state.session ? coverRequestUrls(state.session.baseUrl, rom, size) : [];
+      if (!urls.length) {
+        img.removeAttribute("src");
+        img.hidden = true;
+        return;
+      }
+      img.hidden = false;
+      img.setAttribute("data-cover", urls[0]);
+      img.setAttribute("data-cover-urls", JSON.stringify(urls));
+      watchCover(img);
+    }
+
     function gameCard(rom) {
       var btn = makeButton(String(rom.id), rom.name || rom.fs_name || "Game", rom.fs_name || "");
-      var url = state.session ? coverUrl(state.session.baseUrl, rom) : "";
-      if (url) {
-        var img = doc.createElement("img");
-        img.className = "cover";
-        img.alt = "";
-        img.width = 72;
-        img.height = 96;
-        coverSeq += 1;
-        img.setAttribute("data-cover-id", String(coverSeq));
-        img.setAttribute("data-cover", url);
-        btn.insertBefore(img, btn.firstChild);
-        watchCover(img);
-      }
+      var img = doc.createElement("img");
+      img.className = "cover";
+      img.alt = "";
+      img.width = 72;
+      img.height = 96;
+      btn.insertBefore(img, btn.firstChild);
+      paintCover(img, rom, "small");
       btn.addEventListener("click", function () { openGame(rom); });
       return btn;
     }
@@ -717,6 +1013,13 @@
       });
     }
 
+    function showCoverNote(visible) {
+      var note = doc.getElementById("cover-note");
+      if (!note) return;
+      note.hidden = !visible;
+      note.textContent = visible ? "Cover stays in this app. CocoonFE does not document a cover file Cocoon scans." : "";
+    }
+
     function openGame(rom) {
       state.game = rom;
       state.returnScreen = "games";
@@ -726,6 +1029,8 @@
       doc.getElementById("game-title").textContent = rom.name || rom.fs_name || "Game";
       doc.getElementById("game-file").textContent = rom.fs_name || fileName;
       doc.getElementById("game-dest").textContent = dest.folderName + "/" + fileName;
+      paintCover(doc.getElementById("game-cover"), rom, "large");
+      showCoverNote(!!rom.shelfCover || romCoverCandidates(rom, "large").length > 0);
       var note = doc.getElementById("rescan-note");
       if (note) {
         note.hidden = true;
@@ -921,6 +1226,95 @@
       setStatus(layout === "romm" ? "New files use RomM folder names." : layout === "alias" ? "New files use a folder that already exists." : "New files use Cocoon folder names.");
     }
 
+    function applyTheme(theme) {
+      state.theme = normalizeTheme(theme);
+      doc.documentElement.setAttribute("data-theme", state.theme);
+      var bright = doc.getElementById("btn-theme-bright");
+      var dark = doc.getElementById("btn-theme-dark");
+      if (bright) bright.classList.toggle("is-selected", state.theme === "bright");
+      if (dark) dark.classList.toggle("is-selected", state.theme === "dark");
+    }
+
+    function chooseTheme(theme) {
+      applyTheme(theme);
+      native("saveTheme", state.theme);
+    }
+
+    function fieldValue(id) {
+      var el = doc.getElementById(id);
+      return el ? el.value : "";
+    }
+
+    function setField(id, value) {
+      var el = doc.getElementById(id);
+      if (el) el.value = value || "";
+    }
+
+    function scraperFromSession(session) {
+      session = session || {};
+      return {
+        ssUser: session.ssUser || "",
+        ssPassword: session.ssPassword || "",
+        ssDevId: session.ssDevId || "",
+        ssDevPassword: session.ssDevPassword || "",
+        sgdbKey: session.sgdbKey || ""
+      };
+    }
+
+    function fillScraperForm(session) {
+      var creds = scraperFromSession(session);
+      setField("ss-user", creds.ssUser);
+      setField("ss-password", creds.ssPassword);
+      setField("ss-devid", creds.ssDevId);
+      setField("ss-devpassword", creds.ssDevPassword);
+      setField("sgdb-key", creds.sgdbKey);
+    }
+
+    function readScraperForm() {
+      return {
+        ssUser: fieldValue("ss-user"),
+        ssPassword: fieldValue("ss-password"),
+        ssDevId: fieldValue("ss-devid"),
+        ssDevPassword: fieldValue("ss-devpassword"),
+        sgdbKey: fieldValue("sgdb-key")
+      };
+    }
+
+    function saveScraperForm() {
+      var creds = readScraperForm();
+      if (!state.session) state.session = {};
+      state.session.ssUser = creds.ssUser;
+      state.session.ssPassword = creds.ssPassword;
+      state.session.ssDevId = creds.ssDevId;
+      state.session.ssDevPassword = creds.ssDevPassword;
+      state.session.sgdbKey = creds.sgdbKey;
+      native("saveScraper", creds.ssUser, creds.ssPassword, creds.ssDevId, creds.ssDevPassword, creds.sgdbKey);
+      setStatus("Artwork accounts saved on this device.");
+    }
+
+    function clearScraperForm() {
+      fillScraperForm({});
+      if (state.session) {
+        state.session.ssUser = "";
+        state.session.ssPassword = "";
+        state.session.ssDevId = "";
+        state.session.ssDevPassword = "";
+        state.session.sgdbKey = "";
+      }
+      native("clearScraper");
+      setStatus("Artwork accounts cleared.");
+    }
+
+    function startScrape(rom) {
+      if (!rom) { setStatus("Open a game, then scrape artwork."); return; }
+      var creds = state.session ? scraperFromSession(state.session) : readScraperForm();
+      var step = scrapeStart(creds, rom);
+      if (!step.request) { setStatus(step.message); return; }
+      state.scrape = { seq: (state.scrape && state.scrape.seq ? state.scrape.seq : 0) + 1, rom: rom, step: step, creds: creds };
+      setStatus("Scraping artwork…");
+      native("fetchText", state.scrape.seq, step.request.url, step.request.bearer || "");
+    }
+
     shelf.onHardwareKey = onHardwareKey;
     shelf.onDownloadProgress = function (text) {
       var el = doc.getElementById("download-progress");
@@ -939,8 +1333,35 @@
     shelf.onLoggedOut = function (message) { forceLogout(message); };
     shelf.onCover = function (id, dataUrl) {
       if (!dataUrl) return;
-      var img = doc.querySelector('img[data-cover-id="' + id + '"]');
-      if (img) img.src = dataUrl;
+      var key = String(id);
+      var rom = state.romsById[key];
+      if (rom) rom.shelfCover = dataUrl;
+      if (state.game && String(state.game.id) === key) state.game.shelfCover = dataUrl;
+      var nodes = doc.querySelectorAll('img[data-cover-id="' + key + '"]');
+      for (var i = 0; i < nodes.length; i++) {
+        nodes[i].hidden = false;
+        nodes[i].src = dataUrl;
+      }
+      if (state.screen === "game" && state.game && String(state.game.id) === key) showCoverNote(true);
+    };
+    shelf.onText = function (id, status, body) {
+      if (!state.scrape || state.scrape.seq !== id) return;
+      var payload = null;
+      if (status >= 200 && status < 300 && body) {
+        try { payload = JSON.parse(body); } catch (err) { payload = null; }
+      }
+      var next = scrapeAdvance(state.scrape.step, payload, state.scrape.creds, state.scrape.rom);
+      state.scrape.step = next;
+      if (next.imageUrl) {
+        native("fetchCover", Number(state.scrape.rom.id), JSON.stringify([next.imageUrl]));
+        setStatus("Artwork found.");
+        return;
+      }
+      if (next.request) {
+        native("fetchText", id, next.request.url, next.request.bearer || "");
+        return;
+      }
+      setStatus(next.message || "No artwork found.");
     };
     shelf.onRomRoot = function (label) {
       var el = doc.getElementById("rom-root-label");
@@ -958,6 +1379,7 @@
       refreshFolders();
       showScreen("settings");
       paintLayout();
+      fillScraperForm(state.session);
       focusDefault();
     });
     doc.getElementById("btn-rom-root").addEventListener("click", function () { native("pickRomRoot"); });
@@ -965,6 +1387,11 @@
     doc.getElementById("btn-layout-romm").addEventListener("click", function () { chooseLayout("romm"); });
     doc.getElementById("btn-layout-alias").addEventListener("click", function () { chooseLayout("alias"); });
     doc.getElementById("btn-logout").addEventListener("click", logout);
+    doc.getElementById("btn-theme-bright").addEventListener("click", function () { chooseTheme("bright"); });
+    doc.getElementById("btn-theme-dark").addEventListener("click", function () { chooseTheme("dark"); });
+    doc.getElementById("btn-save-scraper").addEventListener("click", saveScraperForm);
+    doc.getElementById("btn-clear-scraper").addEventListener("click", clearScraperForm);
+    doc.getElementById("btn-scrape").addEventListener("click", function () { startScrape(state.game); });
     doc.getElementById("game-card").addEventListener("click", function () { startDownload(state.game); });
     doc.getElementById("search-input").addEventListener("input", function (event) {
       if (state.screen !== "platforms") {
@@ -996,6 +1423,8 @@
     } catch (err) { session = null; }
     state.layout = session && session.layout ? session.layout : "cocoon";
     state.session = session && session.token ? session : null;
+    applyTheme(session && session.theme);
+    if (session) fillScraperForm(session);
     paintLayout();
     var rootLabel = doc.getElementById("rom-root-label");
     if (rootLabel) rootLabel.textContent = session && session.romRootLabel ? session.romRootLabel : "No folder chosen";

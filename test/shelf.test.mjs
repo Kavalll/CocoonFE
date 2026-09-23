@@ -120,6 +120,93 @@ test("HTTP 500 stays signed in and only a failed refresh logs out", () => {
   assert.equal(shelf.nextScreen("game", "back"), "games");
 });
 
+test("left and right stay in the grid and the footer does not steal them", () => {
+  const items = [
+    { id: "a", zone: "grid", left: 8, top: 40, width: 148, height: 64 },
+    { id: "b", zone: "grid", left: 164, top: 40, width: 148, height: 64 },
+    { id: "c", zone: "grid", left: 8, top: 112, width: 148, height: 64 },
+    { id: "d", zone: "grid", left: 164, top: 112, width: 148, height: 64 },
+    { id: "back", zone: "footer", left: 4, top: 300, width: 90, height: 56 },
+    { id: "search", zone: "footer", left: 98, top: 300, width: 90, height: 56 },
+    { id: "download", zone: "footer", left: 192, top: 300, width: 90, height: 56 },
+    { id: "settings", zone: "footer", left: 286, top: 300, width: 90, height: 56 }
+  ];
+  assert.equal(shelf.nextFocusTarget(items, "a", "right"), "b");
+  assert.equal(shelf.nextFocusTarget(items, "b", "left"), "a");
+  assert.equal(shelf.nextFocusTarget(items, "b", "right"), "b");
+  assert.equal(shelf.nextFocusTarget(items, "a", "down"), "c");
+  assert.equal(shelf.nextFocusTarget(items, "c", "down"), "back");
+  assert.equal(shelf.nextFocusTarget(items, "d", "down"), "download");
+  assert.equal(shelf.nextFocusTarget(items, "back", "left"), "back");
+  assert.equal(shelf.nextFocusTarget(items, "back", "right"), "search");
+  assert.equal(shelf.nextFocusTarget(items, "settings", "left"), "download");
+  assert.equal(shelf.nextFocusTarget(items, "search", "up"), "c");
+  const closerFooter = [
+    { id: "a", zone: "grid", left: 8, top: 40, width: 100, height: 64 },
+    { id: "b", zone: "grid", left: 400, top: 40, width: 100, height: 64 },
+    { id: "download", zone: "footer", left: 120, top: 80, width: 90, height: 56 }
+  ];
+  assert.equal(shelf.nextFocusTarget(closerFooter, "a", "right"), "b");
+  assert.equal(shelf.nextFocusTarget(closerFooter, "a", "down"), "download");
+  assert.equal(shelf.nextFocusTarget(closerFooter, "download", "left"), "download");
+  assert.equal(shelf.nextFocusTarget(closerFooter, "download", "up"), "a");
+});
+
+test("RomM covers use stored paths before a scrape, and no Cocoon sidecar is invented", () => {
+  const rom = {
+    path_cover_small: "/assets/romm/small.jpg",
+    path_cover_large: "/assets/romm/large.jpg",
+    url_cover: "https://images.example/cover.jpg"
+  };
+  assert.deepEqual(shelf.romCoverCandidates(rom, "small"), [
+    "/assets/romm/small.jpg",
+    "/assets/romm/large.jpg",
+    "https://images.example/cover.jpg"
+  ]);
+  assert.deepEqual(shelf.romCoverCandidates({ path_cover_large: "/assets/romm/large.jpg", path_cover_small: "", url_cover: null }, "large"), [
+    "/assets/romm/large.jpg"
+  ]);
+  assert.equal(shelf.coverUrl("http://romm.local:8080", rom), "http://romm.local:8080/assets/romm/small.jpg");
+  assert.equal(shelf.coverNeedsAuth("http://romm.local:8080", "http://romm.local:8080/assets/romm/small.jpg"), true);
+  assert.equal(shelf.coverNeedsAuth("http://romm.local:8080", "https://images.example/cover.jpg"), false);
+  assert.equal(shelf.cocoonCoverSidecar(), null);
+  assert.equal(shelf.normalizeTheme("dark"), "dark");
+  assert.equal(shelf.normalizeTheme("bright"), "bright");
+  assert.equal(shelf.normalizeTheme("other"), "bright");
+
+  const creds = {
+    ssUser: "ada",
+    ssPassword: "pw",
+    ssDevId: "dev",
+    ssDevPassword: "devpw",
+    sgdbKey: "secret-key"
+  };
+  const game = { id: 7, name: "Zelda", fs_name: "zelda.nds" };
+  const start = shelf.scrapeStart(creds, game);
+  assert.equal(start.phase, "ss-infos");
+  assert.equal(start.request.bearer, "");
+  assert.match(start.request.url, /jeuInfos\.php/);
+  assert.match(start.request.url, /romnom=zelda\.nds/);
+  assert.equal(start.request.url.includes("secret-key"), false);
+  const found = shelf.scrapeAdvance(start, {
+    response: { jeu: { medias: [{ type: "box-3D", url: "https://img.example/3d.png" }, { type: "box-2D", url: "https://img.example/box.png" }] } }
+  }, creds, game);
+  assert.equal(found.imageUrl, "https://img.example/box.png");
+  const missed = shelf.scrapeAdvance(start, { response: { jeu: { medias: [] } } }, creds, game);
+  assert.equal(missed.phase, "ss-search");
+  const searchMiss = shelf.scrapeAdvance(missed, { response: { jeux: [] } }, creds, game);
+  assert.equal(searchMiss.phase, "sg-search");
+  assert.equal(searchMiss.request.bearer, "secret-key");
+  assert.equal(searchMiss.request.url.includes("secret-key"), false);
+  const grids = shelf.scrapeAdvance(searchMiss, { data: [{ id: 42, name: "Zelda" }] }, creds, game);
+  assert.match(grids.request.url, /\/grids\/game\/42/);
+  const image = shelf.scrapeAdvance(grids, { data: [{ url: "https://cdn.example/g.png", thumb: "https://cdn.example/t.png" }] }, creds, game);
+  assert.equal(image.imageUrl, "https://cdn.example/g.png");
+  assert.equal(shelf.scrapeStart({}, game).request, null);
+  assert.match(shelf.scrapeStart({ ssUser: "ada" }, game).message, /devid/);
+  assert.equal(shelf.scrapeStart({ sgdbKey: "secret-key" }, game).phase, "sg-search");
+});
+
 test("inlined script has no raw closing tag and parses", () => {
   const hostile = 'var token = "$&"; var markup = "</script></body></style>";';
   const broken = "<body></body>".replace("</body>", "<script>" + hostile + "</script></body>");
