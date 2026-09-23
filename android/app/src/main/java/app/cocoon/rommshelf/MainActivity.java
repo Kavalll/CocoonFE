@@ -1,5 +1,6 @@
 package app.cocoon.rommshelf;
 
+import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.net.Uri;
@@ -12,8 +13,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-import androidx.activity.ComponentActivity;
-import androidx.activity.OnBackPressedCallback;
 import androidx.documentfile.provider.DocumentFile;
 
 import org.json.JSONObject;
@@ -22,7 +21,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 
-public class MainActivity extends ComponentActivity implements RommBridge.Host {
+public class MainActivity extends Activity implements RommBridge.Host {
     private static final String TAG = "CocoonRommShelf";
     private static final int REQ_TREE = 41;
     private static final String PAGE_ORIGIN = "https://shelf.cocoon.local/";
@@ -58,12 +57,6 @@ public class MainActivity extends ComponentActivity implements RommBridge.Host {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, android.webkit.WebResourceRequest request) {
                 return true;
-            }
-        });
-        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
-            @Override
-            public void handleOnBackPressed() {
-                forwardKey("back");
             }
         });
         String html = readPage();
@@ -120,6 +113,11 @@ public class MainActivity extends ComponentActivity implements RommBridge.Host {
                 .putString("romRootLabel", label == null ? "" : label)
                 .apply();
         evalJs("CocoonShelf.onRomRoot(" + JSONObject.quote(label == null ? "" : label) + ")");
+    }
+
+    @Override
+    public void onBackPressed() {
+        forwardKey("back");
     }
 
     @Override
