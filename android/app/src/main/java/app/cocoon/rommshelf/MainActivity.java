@@ -151,11 +151,11 @@ public class MainActivity extends Activity implements RommBridge.Host {
             case KeyEvent.KEYCODE_ENTER:
             case KeyEvent.KEYCODE_NUMPAD_ENTER:
             case KeyEvent.KEYCODE_SPACE:
-            case KeyEvent.KEYCODE_BUTTON_A:
+            case KeyEvent.KEYCODE_BUTTON_B:
             case KeyEvent.KEYCODE_BUTTON_START:
                 return "confirm";
             case KeyEvent.KEYCODE_BACK:
-            case KeyEvent.KEYCODE_BUTTON_B:
+            case KeyEvent.KEYCODE_BUTTON_A:
             case KeyEvent.KEYCODE_ESCAPE:
                 return "back";
             default:

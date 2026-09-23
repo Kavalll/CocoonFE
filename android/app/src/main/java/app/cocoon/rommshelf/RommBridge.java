@@ -122,7 +122,7 @@ public final class RommBridge {
             String base = normalizeBaseUrl(baseUrl);
             String body = "grant_type=password&username=" + urlEnc(username)
                     + "&password=" + urlEnc(password)
-                    + "&scope=" + urlEnc("roms.read platforms.read assets.read");
+                    + "&scope=" + urlEnc("roms.read platforms.read assets.read collections.read");
             HttpResult result = send("POST", base + "/api/token", body, "application/x-www-form-urlencoded", false);
             if (!result.ok()) return error(result, false);
             JSONObject token = new JSONObject(result.body);
@@ -202,19 +202,38 @@ public final class RommBridge {
 
     @JavascriptInterface
     public String roms(int platformId, String search, int limit, int offset) {
+        return gallery(galleryQuery(platformId, search, limit, offset), plainQuery(platformId, search, limit, offset));
+    }
+
+    @JavascriptInterface
+    public String gallery(String firstPath, String retryPath) {
         try {
-            HttpResult first = authed("GET", base() + galleryQuery(platformId, search, limit, offset));
+            HttpResult first = authed("GET", base() + safePath(firstPath));
             if (first.logout) return error(first, true);
             HttpResult chosen = first;
-            if (first.status == 500 || first.status == 422 || first.status == 400) {
-                chosen = authed("GET", base() + plainQuery(platformId, search, limit, offset));
+            if ((first.status == 500 || first.status == 422 || first.status == 400) && retryPath != null && !retryPath.trim().isEmpty()) {
+                chosen = authed("GET", base() + safePath(retryPath));
                 if (chosen.logout) return error(chosen, true);
             }
             if (!chosen.ok()) return error(chosen, false);
             JSONObject payload = basePayload(chosen, false);
-            String trimmed = chosen.body == null ? "" : chosen.body.trim();
-            if (trimmed.startsWith("[")) payload.put("page", new JSONArray(trimmed));
-            else payload.put("page", new JSONObject(trimmed));
+            payload.put("page", parseJson(chosen.body));
+            return payload.toString();
+        } catch (Exception err) {
+            return errorMessage(err.getMessage(), false);
+        }
+    }
+
+    @JavascriptInterface
+    public String collections() {
+        try {
+            HttpResult manual = authed("GET", base() + "/api/collections");
+            if (manual.logout) return error(manual, true);
+            if (!manual.ok()) return error(manual, false);
+            JSONObject payload = basePayload(manual, false);
+            payload.put("manual", parseList(manual.body));
+            payload.put("smart", optionalList("/api/collections/smart"));
+            payload.put("virtual", optionalList("/api/collections/virtual?type=collection"));
             return payload.toString();
         } catch (Exception err) {
             return errorMessage(err.getMessage(), false);
@@ -578,6 +597,42 @@ public final class RommBridge {
 
     private String base() {
         return prefs.getString("baseUrl", "").replaceAll("/+$", "");
+    }
+
+    private JSONArray optionalList(String path) {
+        try {
+            HttpResult result = authed("GET", base() + path);
+            if (!result.ok() || result.logout) return new JSONArray();
+            return parseList(result.body);
+        } catch (Exception err) {
+            return new JSONArray();
+        }
+    }
+
+    private static Object parseJson(String body) throws JSONException {
+        String trimmed = body == null ? "" : body.trim();
+        if (trimmed.startsWith("[")) return new JSONArray(trimmed);
+        if (trimmed.startsWith("{")) return new JSONObject(trimmed);
+        return new JSONObject();
+    }
+
+    private static JSONArray parseList(String body) throws JSONException {
+        String trimmed = body == null ? "" : body.trim();
+        if (trimmed.startsWith("[")) return new JSONArray(trimmed);
+        if (trimmed.startsWith("{")) {
+            JSONObject obj = new JSONObject(trimmed);
+            if (obj.has("items") && obj.get("items") instanceof JSONArray) return obj.getJSONArray("items");
+            if (obj.has("collections") && obj.get("collections") instanceof JSONArray) return obj.getJSONArray("collections");
+        }
+        return new JSONArray();
+    }
+
+    private static String safePath(String path) {
+        String trimmed = path == null ? "" : path.trim();
+        if (!trimmed.startsWith("/api/") || trimmed.contains("://") || trimmed.contains("..")) {
+            throw new IllegalArgumentException("Unsupported path.");
+        }
+        return trimmed;
     }
 
     private static String galleryQuery(int platformId, String search, int limit, int offset) {

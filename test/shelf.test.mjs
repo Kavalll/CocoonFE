@@ -267,6 +267,119 @@ test("game details use the RomM summary and screenshot paths", () => {
   assert.deepEqual(shelf.romScreenshotPaths({ summary: "No pictures" }), []);
 });
 
+test("screenshot preview is separate from the left column and confirm opens the carousel", () => {
+  const items = [
+    { id: "game-card", zone: "page", left: 8, top: 8, width: 220, height: 140 },
+    { id: "btn-scrape", zone: "page", left: 8, top: 156, width: 220, height: 56 },
+    { id: "shot-preview", zone: "preview", left: 244, top: 8, width: 180, height: 112 },
+    { id: "btn-download", zone: "footer", left: 8, top: 300, width: 140, height: 56 },
+    { id: "btn-settings", zone: "footer", left: 156, top: 300, width: 140, height: 56 }
+  ];
+  assert.equal(shelf.nextFocusTarget(items, "game-card", "right"), "shot-preview");
+  assert.equal(shelf.nextFocusTarget(items, "btn-scrape", "right"), "shot-preview");
+  assert.equal(shelf.nextFocusTarget(items, "shot-preview", "left"), "game-card");
+  assert.equal(shelf.nextFocusTarget(items, "shot-preview", "right"), "shot-preview");
+  assert.equal(shelf.nextFocusTarget(items, "game-card", "down"), "btn-scrape");
+  assert.equal(shelf.nextFocusTarget(items, "btn-download", "left"), "btn-download");
+  assert.equal(shelf.nextFocusTarget(items, "btn-settings", "left"), "btn-download");
+  const opened = shelf.gameScreenshotNav({ focus: "preview", index: 0, count: 3, columnId: "game-card" }, "confirm");
+  assert.equal(opened.focus, "carousel");
+  assert.equal(opened.open, true);
+  assert.equal(opened.index, 0);
+  assert.equal(opened.leaveScreen, false);
+  const next = shelf.gameScreenshotNav(opened, "right");
+  assert.equal(next.index, 1);
+  assert.equal(next.open, true);
+  assert.equal(next.focus, "carousel");
+  const stayed = shelf.gameScreenshotNav({ focus: "carousel", index: 2, count: 3, open: true }, "right");
+  assert.equal(stayed.index, 2);
+  const closed = shelf.gameScreenshotNav(next, "back");
+  assert.equal(closed.focus, "preview");
+  assert.equal(closed.open, false);
+  assert.equal(closed.leaveScreen, false);
+  assert.equal(shelf.gameScreenshotNav({ focus: "column", index: 0, count: 0 }, "right").focus, "column");
+  assert.equal(shelf.backTarget({ screen: "game", carousel: true }).closeCarousel, true);
+  assert.equal(shelf.backTarget({ screen: "game", carousel: true }).screen, "game");
+});
+
+test("all-consoles search is separate from the console filter", () => {
+  const filtered = shelf.applyPlatformFilterModel(consoles, "zelda", "switch");
+  assert.equal(filtered.fetchGames, false);
+  assert.equal(filtered.screen, "platforms");
+  assert.equal(filtered.gameSearch, null);
+  const draft = shelf.planLibrarySearch({ mode: "draft", query: "zelda", previous: "" });
+  assert.equal(draft.fetch, false);
+  assert.equal(draft.kind, "draft");
+  const submitted = shelf.planLibrarySearch({ mode: "submit", query: " zelda ", previous: "" });
+  assert.equal(submitted.fetch, true);
+  assert.equal(submitted.kind, "library");
+  assert.equal(submitted.query, "zelda");
+  const requests = shelf.romsRequests({ search: submitted.query, limit: 60, offset: 0 });
+  assert.match(requests.first, /search_term=zelda/);
+  assert.doesNotMatch(requests.first, /platform_id/);
+  assert.doesNotMatch(requests.retry, /platform_id/);
+  const cleared = shelf.planLibrarySearch({ mode: "submit", query: "   ", previous: "zelda" });
+  assert.equal(cleared.fetch, false);
+  assert.equal(cleared.restore, true);
+  assert.equal(cleared.kind, "clear");
+  const paths = shelf.collectionListPaths();
+  assert.equal(paths.manual, "/api/collections");
+  assert.equal(paths.smart, "/api/collections/smart");
+  assert.equal(paths.virtual, "/api/collections/virtual?type=collection");
+  const rows = shelf.normalizeCollectionRows([{ id: 3, name: "RPGs", rom_count: 4 }], "manual");
+  assert.equal(rows[0].id, "3");
+  assert.equal(rows[0].kind, "manual");
+  assert.match(shelf.romsRequests(shelf.collectionRomsOptions(rows[0], 60, 0)).first, /collection_id=3/);
+  assert.match(shelf.romsRequests(shelf.collectionRomsOptions({ id: "9", kind: "smart" }, 60, 0)).first, /smart_collection_id=9/);
+  assert.match(shelf.romsRequests(shelf.collectionRomsOptions({ id: "franchise-zelda", kind: "virtual" }, 60, 0)).first, /virtual_collection_id=franchise-zelda/);
+  const library = [
+    { id: "library-search", zone: "chrome", left: 8, top: 4, width: 300, height: 40 },
+    { id: "tab-consoles", zone: "tab", left: 8, top: 52, width: 140, height: 48 },
+    { id: "tab-collections", zone: "tab", left: 156, top: 52, width: 140, height: 48 },
+    { id: "c1", zone: "grid", left: 8, top: 112, width: 140, height: 64 },
+    { id: "c2", zone: "grid", left: 156, top: 112, width: 140, height: 64 },
+    { id: "btn-settings", zone: "footer", left: 8, top: 300, width: 120, height: 56 }
+  ];
+  assert.equal(shelf.nextFocusTarget(library, "tab-consoles", "right"), "tab-collections");
+  assert.equal(shelf.nextFocusTarget(library, "tab-collections", "left"), "tab-consoles");
+  assert.equal(shelf.nextFocusTarget(library, "c1", "right"), "c2");
+  assert.equal(shelf.nextFocusTarget(library, "c2", "right"), "c2");
+  assert.equal(shelf.nextFocusTarget(library, "tab-collections", "down"), "c2");
+  assert.equal(shelf.nextFocusTarget(library, "tab-consoles", "up"), "library-search");
+  assert.equal(shelf.nextFocusTarget(library, "c1", "up"), "tab-consoles");
+  assert.equal(shelf.nextFocusTarget(library, "library-search", "down"), "tab-collections");
+  assert.equal(shelf.backTarget({ screen: "games", gamesKind: "collection" }).tab, "collections");
+  assert.equal(shelf.backTarget({ screen: "games", gamesKind: "collection" }).screen, "platforms");
+  assert.equal(shelf.backTarget({ screen: "games", gamesKind: "library" }).screen, "platforms");
+  assert.equal(shelf.backTarget({ screen: "platforms" }).finish, false);
+  assert.equal(shelf.backTarget({ screen: "platforms" }).screen, "platforms");
+  assert.equal(shelf.backTarget({ screen: "game" }).screen, "games");
+  assert.equal(shelf.hardwareKeyAction(96), "back");
+  assert.equal(shelf.hardwareKeyAction(4), "back");
+  assert.equal(shelf.hardwareKeyAction(97), "confirm");
+  assert.equal(shelf.hardwareKeyAction(23), "confirm");
+  assert.equal(shelf.hardwareKeyAction(66), "confirm");
+});
+
+test("the footer has no Back or Search button and Download is only on the Game screen", () => {
+  const html = readFileSync(path.join(root, "web", "index.html"), "utf8");
+  const bar = html.slice(html.indexOf('id="bar"'), html.indexOf("</nav>"));
+  assert.equal(bar.includes("btn-back"), false);
+  assert.equal(bar.includes("btn-search"), false);
+  assert.equal(bar.includes(">Back<"), false);
+  assert.equal(bar.includes(">Search<"), false);
+  assert.match(bar, /id="btn-download"/);
+  assert.match(bar, /id="btn-settings"/);
+  assert.equal(shelf.footerControls("game").download, true);
+  assert.equal(shelf.footerControls("game").back, false);
+  assert.equal(shelf.footerControls("game").search, false);
+  assert.equal(shelf.footerControls("platforms").download, false);
+  assert.equal(shelf.footerControls("games").download, false);
+  assert.equal(shelf.footerControls("settings").download, false);
+  assert.equal(shelf.footerControls("connect").download, false);
+  assert.match(shelf.buildTokenRequest("password", { username: "ada", password: "secret" }).body, /collections\.read/);
+});
+
 test("inlined script has no raw closing tag and parses", () => {
   const hostile = 'var token = "$&"; var markup = "</script></body></style>";';
   const broken = "<body></body>".replace("</body>", "<script>" + hostile + "</script></body>");

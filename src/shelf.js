@@ -248,13 +248,22 @@
     var offset = options.offset == null ? 0 : options.offset;
     var parts = ["limit=" + encodeURIComponent(String(limit)), "offset=" + encodeURIComponent(String(offset))];
     if (options.search) parts.push("search_term=" + encodeURIComponent(options.search));
+    if (options.collectionId != null && String(options.collectionId) !== "") {
+      parts.push("collection_id=" + encodeURIComponent(String(options.collectionId)));
+    }
+    if (options.smartCollectionId != null && String(options.smartCollectionId) !== "") {
+      parts.push("smart_collection_id=" + encodeURIComponent(String(options.smartCollectionId)));
+    }
+    if (options.virtualCollectionId != null && String(options.virtualCollectionId) !== "") {
+      parts.push("virtual_collection_id=" + encodeURIComponent(String(options.virtualCollectionId)));
+    }
     if (variant === "plain") {
-      if (options.platformId != null) parts.push("platform_id=" + encodeURIComponent(String(options.platformId)));
+      if (options.platformId != null && String(options.platformId) !== "") parts.push("platform_id=" + encodeURIComponent(String(options.platformId)));
     } else {
       parts.push("order_by=name");
       parts.push("order_dir=asc");
       parts.push("group_by_meta_id=false");
-      if (options.platformId != null) parts.push("platform_ids=" + encodeURIComponent(String(options.platformId)));
+      if (options.platformId != null && String(options.platformId) !== "") parts.push("platform_ids=" + encodeURIComponent(String(options.platformId)));
     }
     return "/api/roms?" + parts.join("&");
   }
@@ -289,7 +298,7 @@
         grant_type: "password",
         username: fields.username || "",
         password: fields.password || "",
-        scope: "roms.read platforms.read assets.read"
+        scope: "roms.read platforms.read assets.read collections.read"
       });
     return {
       path: "/api/token",
@@ -306,6 +315,107 @@
     if (screen === "games") return "platforms";
     if (screen === "settings") return returnScreen || "platforms";
     return screen;
+  }
+
+  function backTarget(view) {
+    view = view || {};
+    var screen = view.screen || "platforms";
+    if (screen === "game" && view.carousel) return { screen: "game", closeCarousel: true, finish: false };
+    if (screen === "game") return { screen: "games", closeCarousel: false, finish: false };
+    if (screen === "games" && view.gamesKind === "collection") {
+      return { screen: "platforms", tab: "collections", closeCarousel: false, finish: false };
+    }
+    if (screen === "games") return { screen: "platforms", tab: "consoles", closeCarousel: false, finish: false };
+    if (screen === "settings") return { screen: view.returnScreen || "platforms", closeCarousel: false, finish: false };
+    if (screen === "connect") return { screen: "connect", closeCarousel: false, finish: true };
+    return { screen: "platforms", closeCarousel: false, finish: false };
+  }
+
+  function planLibrarySearch(input) {
+    input = input || {};
+    var query = trimText(input.query);
+    if (input.mode === "draft") return { fetch: false, restore: false, query: input.previous || "", kind: "draft" };
+    if (!query) return { fetch: false, restore: true, query: "", kind: "clear" };
+    return { fetch: true, restore: false, query: query, kind: "library" };
+  }
+
+  function footerControls(screen) {
+    return {
+      back: false,
+      search: false,
+      download: screen === "game",
+      settings: true
+    };
+  }
+
+  function hardwareKeyAction(keyCode) {
+    if (keyCode === 23 || keyCode === 66 || keyCode === 160 || keyCode === 62 || keyCode === 97 || keyCode === 108) return "confirm";
+    if (keyCode === 4 || keyCode === 96 || keyCode === 111) return "back";
+    if (keyCode === 19) return "up";
+    if (keyCode === 20) return "down";
+    if (keyCode === 21) return "left";
+    if (keyCode === 22) return "right";
+    return "";
+  }
+
+  function collectionListPaths() {
+    return {
+      manual: "/api/collections",
+      smart: "/api/collections/smart",
+      virtual: "/api/collections/virtual?type=collection"
+    };
+  }
+
+  function normalizeCollectionRows(payload, kind) {
+    var list = [];
+    if (payload && Object.prototype.toString.call(payload) === "[object Array]") list = payload;
+    else if (payload && payload.items) list = payload.items;
+    else if (payload && payload.collections) list = payload.collections;
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var row = list[i] || {};
+      if (row.id == null) continue;
+      var count = row.rom_count;
+      if (count == null && row.roms && row.roms.length != null) count = row.roms.length;
+      out.push({
+        id: String(row.id),
+        kind: kind || row.kind || "manual",
+        name: trimText(row.name) || "Collection",
+        romCount: count == null ? 0 : Number(count) || 0
+      });
+    }
+    return out;
+  }
+
+  function collectionRomsOptions(collection, limit, offset) {
+    var options = { limit: limit, offset: offset };
+    if (!collection) return options;
+    if (collection.kind === "smart") options.smartCollectionId = collection.id;
+    else if (collection.kind === "virtual") options.virtualCollectionId = collection.id;
+    else options.collectionId = collection.id;
+    return options;
+  }
+
+  function gameScreenshotNav(view, input) {
+    view = view || {};
+    var focus = view.focus || "column";
+    var count = view.count || 0;
+    var index = view.index || 0;
+    var columnId = view.columnId || "game-card";
+    function shotState(focusName, shotIndex, open) {
+      return { focus: focusName, index: shotIndex, count: count, open: open, columnId: columnId, leaveScreen: false };
+    }
+    if (count < 1) return { focus: "column", index: 0, count: 0, open: false, columnId: columnId, leaveScreen: false };
+    if (index < 0) index = 0;
+    if (index >= count) index = count - 1;
+    if (focus === "column" && input === "right") return shotState("preview", index, false);
+    if (focus === "preview" && input === "left") return shotState("column", index, false);
+    if (focus === "preview" && input === "confirm") return shotState("carousel", index, true);
+    if (focus === "carousel" && input === "right") return shotState("carousel", index + 1 < count ? index + 1 : index, true);
+    if (focus === "carousel" && input === "left") return shotState("carousel", index > 0 ? index - 1 : 0, true);
+    if (focus === "carousel" && input === "back") return shotState("preview", index, false);
+    if (focus === "carousel") return shotState("carousel", index, true);
+    return shotState(focus, index, false);
   }
 
   function isPairCode(code) {
@@ -465,6 +575,12 @@
     return best;
   }
 
+  function zoneItems(list, zone) {
+    var pool = [];
+    for (var i = 0; i < list.length; i++) if ((list[i].zone || "page") === zone) pool.push(list[i]);
+    return pool;
+  }
+
   function nextFocusTarget(items, currentId, direction) {
     var list = items || [];
     var current = null;
@@ -475,32 +591,46 @@
     if (!current) return list.length ? list[0].id : null;
     var zone = current.zone || "page";
     if (direction === "down" && zone === "footer") return current.id;
-    var pool = [];
     if (direction === "left" || direction === "right") {
+      if (zone === "carousel") return current.id;
+      if (direction === "right" && zone === "page") {
+        var previewHit = nearestInDirection(current, zoneItems(list, "preview"), "right");
+        if (previewHit) return previewHit;
+      }
+      if (direction === "left" && zone === "preview") {
+        var column = zoneItems(list, "page");
+        return nearestInDirection(current, column, "left") || (column.length ? column[0].id : current.id);
+      }
+      var row = [];
       for (i = 0; i < list.length; i++) {
         if ((list[i].zone || "page") !== zone) continue;
         if (!sameFocusRow(current, list[i])) continue;
-        pool.push(list[i]);
+        row.push(list[i]);
       }
-      return nearestInDirection(current, pool, direction) || current.id;
+      return nearestInDirection(current, row, direction) || current.id;
     }
     if (direction === "up" && zone === "footer") {
       var hasGrid = false;
       for (i = 0; i < list.length; i++) if (list[i].zone === "grid") hasGrid = true;
       var want = hasGrid ? "grid" : "page";
-      for (i = 0; i < list.length; i++) if ((list[i].zone || "page") === want) pool.push(list[i]);
-      return nearestInDirection(current, pool, direction) || current.id;
+      return nearestInDirection(current, zoneItems(list, want), direction) || current.id;
     }
-    for (i = 0; i < list.length; i++) {
-      if ((list[i].zone || "page") !== zone) continue;
-      pool.push(list[i]);
-    }
-    var inside = nearestInDirection(current, pool, direction);
+    var inside = nearestInDirection(current, zoneItems(list, zone), direction);
     if (inside) return inside;
+    if (direction === "up") {
+      var above = [];
+      if (zone === "grid") above = zoneItems(list, "chrome").concat(zoneItems(list, "tab"));
+      else if (zone === "tab") above = zoneItems(list, "chrome");
+      else if (zone === "chrome") above = zoneItems(list, "tab");
+      return nearestInDirection(current, above, "up") || current.id;
+    }
     if (direction !== "down") return current.id;
-    var footer = [];
-    for (i = 0; i < list.length; i++) if (list[i].zone === "footer") footer.push(list[i]);
-    return nearestInDirection(current, footer, direction) || current.id;
+    if (zone === "chrome" || zone === "tab") {
+      var below = zoneItems(list, "tab").concat(zoneItems(list, "chrome")).concat(zoneItems(list, "grid")).concat(zoneItems(list, "page"));
+      var next = nearestInDirection(current, below, "down");
+      if (next) return next;
+    }
+    return nearestInDirection(current, zoneItems(list, "footer"), "down") || current.id;
   }
 
   function normalizeTheme(value) {
@@ -677,6 +807,14 @@
     romsRequests: romsRequests,
     buildTokenRequest: buildTokenRequest,
     nextScreen: nextScreen,
+    backTarget: backTarget,
+    planLibrarySearch: planLibrarySearch,
+    footerControls: footerControls,
+    hardwareKeyAction: hardwareKeyAction,
+    collectionListPaths: collectionListPaths,
+    normalizeCollectionRows: normalizeCollectionRows,
+    collectionRomsOptions: collectionRomsOptions,
+    gameScreenshotNav: gameScreenshotNav,
     isPairCode: isPairCode,
     isClientToken: isClientToken,
     detectSignIn: detectSignIn,
@@ -730,7 +868,14 @@
       searchOpen: false,
       pendingRescan: "",
       theme: "bright",
-      scrape: null
+      scrape: null,
+      gamesKind: "platform",
+      libraryTab: "consoles",
+      libraryQuery: "",
+      libraryReturn: null,
+      collections: null,
+      collection: null,
+      shots: { paths: [], index: 0, open: false, columnId: "game-card" }
     };
 
     var fallback = doc.getElementById("boot-fallback");
@@ -773,17 +918,17 @@
       if (el) el.classList.add("is-focused");
     }
 
-    function setFocus(el, keepTyping) {
+    function setFocus(el, keepTyping, scroll) {
       markFocused(el);
       if (!el) return;
       var typing = doc.activeElement && (doc.activeElement.tagName === "INPUT" || doc.activeElement.tagName === "TEXTAREA");
       if (keepTyping && typing) {
-        if (el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+        if (scroll !== false && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" });
         return;
       }
       if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") el.focus();
       else if (typing && doc.activeElement && doc.activeElement.blur) doc.activeElement.blur();
-      if (el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+      if (scroll !== false && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
 
     function focusables() {
@@ -836,21 +981,65 @@
       }
       state.screen = name;
       var title = doc.getElementById("title");
-      if (title) title.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+      if (title) {
+        if (name === "platforms" && state.libraryTab === "collections") title.textContent = "Collections";
+        else if (name === "games" && state.gamesKind === "library") title.textContent = "All consoles";
+        else if (name === "games" && state.gamesKind === "collection") title.textContent = state.collection ? state.collection.name : "Collection";
+        else title.textContent = name.charAt(0).toUpperCase() + name.slice(1);
+      }
       var subtitle = doc.getElementById("subtitle");
       if (subtitle) {
         if (name === "connect") subtitle.textContent = "";
-        else if (name === "platforms") subtitle.textContent = "Confirm opens a console. Search only filters this list.";
+        else if (name === "platforms" && state.libraryTab === "collections") subtitle.textContent = "Confirm opens a collection.";
+        else if (name === "platforms") subtitle.textContent = "Confirm opens a console. The console field only filters this list.";
+        else if (name === "games" && state.gamesKind === "library") subtitle.textContent = state.libraryQuery || "";
+        else if (name === "games" && state.gamesKind === "collection") subtitle.textContent = state.collection ? (state.collection.romCount + " games") : "";
         else if (name === "games") subtitle.textContent = state.platform ? platformDisplayName(state.platform) : "";
-        else if (name === "game") subtitle.textContent = state.platform ? platformDisplayName(state.platform) : "";
+        else if (name === "game") {
+          var shown = state.gamesKind === "platform" ? state.platform : (platformForRom(state.game) || state.platform);
+          subtitle.textContent = shown ? platformDisplayName(shown) : "";
+        }
         else subtitle.textContent = "ROM root and folder names Cocoon already scans.";
       }
+      paintChrome();
+    }
+
+    function paintChrome() {
+      var platforms = state.screen === "platforms";
+      var games = state.screen === "games";
+      var consoles = state.libraryTab !== "collections";
+      var showConsole = platforms && consoles;
+      var showGame = games && state.gamesKind === "platform";
+      var showLibrary = platforms || games;
+      var consoleLabel = doc.getElementById("console-filter-label");
+      var gameLabel = doc.getElementById("game-search-label");
+      var libraryLabel = doc.getElementById("library-search-label");
+      var find = doc.getElementById("find-bar");
+      if (consoleLabel) consoleLabel.hidden = !showConsole;
+      if (gameLabel) gameLabel.hidden = !showGame;
+      if (libraryLabel) libraryLabel.hidden = !showLibrary;
+      if (find) find.hidden = !showConsole && !showGame && !showLibrary;
+      var platformGrid = doc.getElementById("platform-grid");
+      var collectionGrid = doc.getElementById("collection-grid");
+      var tabs = doc.getElementById("library-tabs");
+      if (platformGrid) platformGrid.hidden = !(platforms && consoles);
+      if (collectionGrid) collectionGrid.hidden = !(platforms && !consoles);
+      if (tabs) tabs.hidden = !platforms;
+      var tabConsoles = doc.getElementById("tab-consoles");
+      var tabCollections = doc.getElementById("tab-collections");
+      if (tabConsoles) tabConsoles.classList.toggle("is-selected", consoles);
+      if (tabCollections) tabCollections.classList.toggle("is-selected", !consoles);
+      var download = doc.getElementById("btn-download");
+      if (download) download.hidden = !footerControls(state.screen).download;
     }
 
     function focusDefault() {
       if (state.screen === "platforms") {
-        var card = doc.querySelector("#platform-grid .is-focused") || doc.querySelector("#platform-grid [data-card]:not([hidden])");
+        var gridId = state.libraryTab === "collections" ? "#collection-grid" : "#platform-grid";
+        var card = doc.querySelector(gridId + " .is-focused") || doc.querySelector(gridId + " [data-card]:not([hidden])");
         if (card) { setFocus(card, false); return; }
+        setFocus(doc.getElementById(state.libraryTab === "collections" ? "tab-collections" : "tab-consoles"), false);
+        return;
       }
       if (state.screen === "games") {
         var game = doc.querySelector("#game-grid [data-card]");
@@ -1027,15 +1216,31 @@
       var btn = makeButton("more", "More", "Next " + PAGE_SIZE + " games");
       btn.id = "btn-more";
       btn.addEventListener("click", function () {
-        loadGames(state.gameSearch || "", state.gamesLoaded, false);
+        loadGames(state.gamesLoaded, false);
       });
       grid.appendChild(btn);
     }
 
-    function loadGames(search, offset, replace) {
-      if (!state.platform) return;
-      setStatus(search ? "Searching…" : "");
-      var raw = native("roms", Number(state.platform.id), search || "", PAGE_SIZE, offset || 0);
+    function currentRomsRequests(offset) {
+      var options = { limit: PAGE_SIZE, offset: offset || 0 };
+      if (state.gamesKind === "library") options.search = state.libraryQuery || "";
+      else if (state.gamesKind === "collection") {
+        var extra = collectionRomsOptions(state.collection, PAGE_SIZE, offset || 0);
+        options.collectionId = extra.collectionId;
+        options.smartCollectionId = extra.smartCollectionId;
+        options.virtualCollectionId = extra.virtualCollectionId;
+      } else {
+        options.platformId = state.platform ? state.platform.id : null;
+        options.search = state.gameSearch || "";
+      }
+      return romsRequests(options);
+    }
+
+    function loadGames(offset, replace) {
+      if (state.gamesKind === "platform" && !state.platform) return;
+      if (state.gamesKind === "collection" && !state.collection) return;
+      var requests = currentRomsRequests(offset);
+      var raw = native("gallery", requests.first, requests.retry);
       var result = parseNative(raw);
       if (!result) { setStatus("Could not reach RomM."); return; }
       if (result.logout) { forceLogout(result.error); return; }
@@ -1061,7 +1266,7 @@
       state.gamesLoaded += page.items.length;
       state.gamesTotal = page.total;
       if (hasMore(page)) appendMore();
-      setStatus("");
+      setStatus(replace && !page.items.length ? "No games." : "");
       if (replace) {
         focusDefault();
         return;
@@ -1075,28 +1280,229 @@
     function openPlatform(platform) {
       if (!canOpenPlatform(platform)) return;
       state.platform = platform;
+      state.gamesKind = "platform";
+      state.collection = null;
       state.gameSearch = "";
       state.game = null;
+      state.libraryQuery = "";
+      state.libraryReturn = null;
       state.returnScreen = "platforms";
-      var input = doc.getElementById("search-input");
-      if (input) {
-        input.value = "";
-        input.blur();
-      }
-      state.searchOpen = false;
-      doc.getElementById("search-layer").hidden = true;
+      var gameSearch = doc.getElementById("game-search");
+      if (gameSearch) gameSearch.value = "";
+      var library = doc.getElementById("library-search");
+      if (library) library.value = "";
       showScreen("games");
-      loadGames("", 0, true);
+      loadGames(0, true);
+    }
+
+    function selectTab(tab) {
+      state.libraryTab = tab === "collections" ? "collections" : "consoles";
+      if (state.screen !== "platforms") showScreen("platforms");
+      else paintChrome();
+      if (state.libraryTab === "collections") loadCollections();
+      else focusDefault();
+    }
+
+    function renderCollections() {
+      var grid = doc.getElementById("collection-grid");
+      if (!grid) return;
+      grid.textContent = "";
+      var rows = state.collections || [];
+      for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        var btn = makeButton("collection-" + row.kind + "-" + row.id, row.name, row.romCount + (row.romCount === 1 ? " game" : " games"));
+        btn.setAttribute("data-focus-id", "collection-" + row.kind + "-" + row.id);
+        (function (item) {
+          btn.addEventListener("click", function () { openCollection(item); });
+        })(row);
+        grid.appendChild(btn);
+      }
+      if (!rows.length) setStatus("No collections.");
+      else setStatus("");
+      focusDefault();
+    }
+
+    function loadCollections() {
+      if (state.collections) { renderCollections(); return; }
+      setStatus("Loading collections…");
+      var raw = native("collections");
+      var result = parseNative(raw);
+      if (!result) { setStatus("Could not reach RomM."); return; }
+      if (result.logout) { forceLogout(result.error); return; }
+      if (!result.ok) { setStatus(result.error || "Could not load collections."); return; }
+      var manual = normalizeCollectionRows(result.manual, "manual");
+      var smart = normalizeCollectionRows(result.smart, "smart");
+      var virtual = normalizeCollectionRows(result.virtual, "virtual");
+      state.collections = manual.concat(smart).concat(virtual);
+      renderCollections();
+    }
+
+    function openCollection(item) {
+      state.collection = item;
+      state.gamesKind = "collection";
+      state.game = null;
+      state.gameSearch = "";
+      state.returnScreen = "platforms";
+      showScreen("games");
+      setStatus("Loading games…");
+      loadGames(0, true);
+    }
+
+    function submitGameSearch() {
+      var input = doc.getElementById("game-search");
+      var plan = planGameSearch({ mode: "submit", query: input ? input.value : "", previous: state.gameSearch });
+      if (!plan.fetch) return;
+      state.gameSearch = plan.query;
+      state.gamesKind = "platform";
+      loadGames(0, true);
+    }
+
+    function rememberLibraryReturn() {
+      if (state.gamesKind === "library" && state.libraryReturn) return;
+      state.libraryReturn = {
+        screen: state.screen,
+        gamesKind: state.gamesKind,
+        tab: state.libraryTab,
+        platform: state.platform,
+        gameSearch: state.gameSearch,
+        collection: state.collection
+      };
+    }
+
+    function restoreLibraryReturn() {
+      var saved = state.libraryReturn;
+      state.libraryQuery = "";
+      state.libraryReturn = null;
+      var library = doc.getElementById("library-search");
+      if (library) library.value = "";
+      if (saved && saved.gamesKind === "platform" && saved.platform && saved.screen === "games") {
+        state.platform = saved.platform;
+        state.collection = null;
+        state.gamesKind = "platform";
+        state.gameSearch = saved.gameSearch || "";
+        var gameSearch = doc.getElementById("game-search");
+        if (gameSearch) gameSearch.value = state.gameSearch;
+        showScreen("games");
+        loadGames(0, true);
+        return;
+      }
+      state.gamesKind = "platform";
+      state.libraryTab = saved && saved.tab ? saved.tab : "consoles";
+      state.collection = saved ? saved.collection : null;
+      showScreen("platforms");
+      if (state.libraryTab === "collections" && !state.collections) loadCollections();
+      else focusDefault();
+    }
+
+    function submitLibrary() {
+      var input = doc.getElementById("library-search");
+      var plan = planLibrarySearch({ mode: "submit", query: input ? input.value : "", previous: state.libraryQuery });
+      if (plan.kind === "draft" || !plan.fetch && !plan.restore) return;
+      if (plan.restore) {
+        if (state.gamesKind === "library") restoreLibraryReturn();
+        return;
+      }
+      rememberLibraryReturn();
+      setStatus("Searching all consoles…");
+      var requests = romsRequests({ search: plan.query, limit: PAGE_SIZE, offset: 0 });
+      var raw = native("gallery", requests.first, requests.retry);
+      var result = parseNative(raw);
+      if (!result) { setStatus("Could not reach RomM."); return; }
+      if (result.logout) { forceLogout(result.error); return; }
+      if (!result.ok) { setStatus(result.error || "Could not search games."); return; }
+      state.libraryQuery = plan.query;
+      state.gamesKind = "library";
+      state.collection = null;
+      showScreen("games");
+      var page = normalizeRomPage(result.page);
+      var grid = doc.getElementById("game-grid");
+      grid.textContent = "";
+      state.romsById = {};
+      state.gamesLoaded = 0;
+      appendGames(page.items);
+      state.gamesLoaded = page.items.length;
+      state.gamesTotal = page.total;
+      if (hasMore(page)) appendMore();
+      setStatus("");
+      focusDefault();
+    }
+
+    function platformForRom(rom) {
+      if (!rom) return null;
+      var id = rom.platform_id;
+      if (memoryPlatforms && id != null) {
+        for (var i = 0; i < memoryPlatforms.length; i++) {
+          if (String(memoryPlatforms[i].id) === String(id)) return memoryPlatforms[i];
+        }
+      }
+      var nested = rom.platform || {};
+      var slug = rom.platform_slug || nested.slug || "";
+      if (!slug && id == null) return null;
+      return {
+        id: id,
+        slug: slug,
+        fs_slug: rom.platform_fs_slug || nested.fs_slug || slug,
+        name: rom.platform_name || nested.name || slug,
+        display_name: rom.platform_display_name || nested.display_name || ""
+      };
     }
 
     function destinationFor() {
       refreshFolders();
+      var platform = state.platform;
+      if (state.game && state.gamesKind !== "platform") platform = platformForRom(state.game) || platform;
       return resolveDestination(map, {
-        rommSlug: state.platform ? state.platform.slug : "",
-        rommFsSlug: state.platform ? (state.platform.fs_slug || state.platform.slug) : "",
+        rommSlug: platform ? platform.slug : "",
+        rommFsSlug: platform ? (platform.fs_slug || platform.slug) : "",
         layout: state.layout,
         existingFolders: state.existingFolders
       });
+    }
+
+    function shotView() {
+      var shots = state.shots || { paths: [], index: 0, open: false, columnId: "game-card" };
+      var focus = "column";
+      var el = doc.querySelector(".is-focused");
+      var id = el ? (el.getAttribute("data-focus-id") || el.id) : "";
+      if (shots.open) focus = "carousel";
+      else if (id === "shot-preview") focus = "preview";
+      return { focus: focus, index: shots.index || 0, count: (shots.paths || []).length, columnId: shots.columnId || "game-card" };
+    }
+
+    function paintShot(img, index) {
+      if (!img || !state.session || !state.shots || !state.shots.paths[index]) return;
+      var romId = state.game ? state.game.id : "game";
+      var id = "shot-" + romId + "-" + index;
+      var urls = JSON.stringify([absoluteUrl(state.session.baseUrl, state.shots.paths[index])]);
+      img.alt = "";
+      img.removeAttribute("src");
+      img.setAttribute("data-cover-id", id);
+      img.setAttribute("data-cover-urls", urls);
+      if (host.RommNative && host.RommNative.fetchImage) host.RommNative.fetchImage(id, urls);
+    }
+
+    function applyShotNav(nav) {
+      var main = doc.querySelector("main");
+      var top = main ? main.scrollTop : 0;
+      state.shots.index = nav.index;
+      state.shots.open = !!nav.open;
+      state.shots.columnId = nav.columnId || state.shots.columnId;
+      var preview = doc.getElementById("shot-preview");
+      var carousel = doc.getElementById("shot-carousel");
+      var count = doc.getElementById("shot-count");
+      if (carousel) carousel.hidden = !nav.open;
+      if (nav.open) {
+        paintShot(doc.getElementById("shot-carousel-img"), nav.index);
+        if (count) count.textContent = (nav.index + 1) + " / " + state.shots.paths.length;
+        setFocus(carousel, false, false);
+      } else if (nav.focus === "preview" && preview) {
+        paintShot(doc.getElementById("shot-preview-img"), nav.index);
+        setFocus(preview, false, false);
+      } else {
+        var column = doc.getElementById(nav.columnId || "game-card");
+        if (column) setFocus(column, false, false);
+      }
+      if (main) main.scrollTop = top;
     }
 
     function showGameDetails(rom) {
@@ -1106,27 +1512,21 @@
         summary.textContent = text;
         summary.hidden = !text;
       }
-      var strip = doc.getElementById("game-shots");
-      if (!strip) return;
-      strip.textContent = "";
       var paths = romScreenshotPaths(rom);
-      if (!paths.length || !state.session) {
-        strip.hidden = true;
+      var limit = paths.length > 8 ? 8 : paths.length;
+      var kept = [];
+      for (var i = 0; i < limit; i++) kept.push(paths[i]);
+      state.shots = { paths: kept, index: 0, open: false, columnId: "game-card" };
+      var preview = doc.getElementById("shot-preview");
+      var carousel = doc.getElementById("shot-carousel");
+      if (carousel) carousel.hidden = true;
+      if (!preview) return;
+      if (!kept.length || !state.session) {
+        preview.hidden = true;
         return;
       }
-      strip.hidden = false;
-      var limit = paths.length > 8 ? 8 : paths.length;
-      for (var i = 0; i < limit; i++) {
-        var img = doc.createElement("img");
-        img.className = "shot";
-        img.alt = "";
-        img.width = 140;
-        img.height = 80;
-        img.setAttribute("data-cover-id", "shot-" + rom.id + "-" + i);
-        img.setAttribute("data-cover-urls", JSON.stringify([absoluteUrl(state.session.baseUrl, paths[i])]));
-        strip.appendChild(img);
-        watchCover(img);
-      }
+      preview.hidden = false;
+      paintShot(doc.getElementById("shot-preview-img"), 0);
     }
 
     function showCoverNote(visible) {
@@ -1153,7 +1553,9 @@
         note.hidden = true;
         note.textContent = "";
       }
-      setFocus(doc.getElementById("game-card"), false);
+      var main = doc.querySelector("main");
+      if (main) main.scrollTop = 0;
+      setFocus(doc.getElementById("game-card"), false, false);
     }
 
     function refreshFolders() {
@@ -1251,68 +1653,55 @@
       setStatus("Logged out.");
     }
 
-    function toggleSearch() {
-      if (state.screen !== "platforms" && state.screen !== "games") {
-        setStatus("Search filters consoles, or searches the open console.");
-        return;
-      }
-      var layer = doc.getElementById("search-layer");
-      var input = doc.getElementById("search-input");
-      state.searchOpen = !state.searchOpen;
-      layer.hidden = !state.searchOpen;
-      if (!state.searchOpen) return;
-      input.placeholder = state.screen === "platforms" ? "Filter consoles" : "Search this console, then confirm";
-      if (state.screen === "games") input.value = state.gameSearch || "";
-      input.focus();
-    }
-
-    function submitSearch() {
-      var input = doc.getElementById("search-input");
-      var query = input ? input.value : "";
-      if (state.screen === "platforms") {
-        applyPlatformFilter(query);
-        return;
-      }
-      if (state.screen === "games") {
-        var plan = planGameSearch({ mode: "submit", query: query, previous: state.gameSearch });
-        state.gameSearch = plan.query;
-        if (plan.fetch) loadGames(plan.query, 0, true);
-      }
-    }
-
     function goBack() {
-      var next = nextScreen(state.screen, "back", state.returnScreen);
-      if (state.screen === "connect") {
+      var target = backTarget({
+        screen: state.screen,
+        carousel: !!(state.shots && state.shots.open),
+        gamesKind: state.gamesKind,
+        returnScreen: state.returnScreen
+      });
+      if (target.closeCarousel) {
+        applyShotNav(gameScreenshotNav(shotView(), "back"));
+        return;
+      }
+      if (target.finish) {
         if (host.RommNative && host.RommNative.finishApp) host.RommNative.finishApp();
         return;
       }
-      if (next === state.screen) return;
-      showScreen(next);
-      if (next === "platforms" && state.platformQuery) {
-        var input = doc.getElementById("search-input");
-        state.searchOpen = true;
-        doc.getElementById("search-layer").hidden = false;
-        if (input) input.value = state.platformQuery;
-        applyPlatformFilter(state.platformQuery);
-      } else {
-        focusDefault();
+      if (target.screen === state.screen && state.screen === "platforms") return;
+      if (target.tab) state.libraryTab = target.tab;
+      showScreen(target.screen);
+      if (target.screen === "platforms" && state.platformQuery) applyPlatformFilter(state.platformQuery);
+      if (target.screen === "platforms" && state.libraryTab === "collections" && !state.collections) {
+        loadCollections();
+        return;
       }
+      if (target.screen === "settings") {
+        paintLayout();
+        fillScraperForm(state.session);
+      }
+      focusDefault();
     }
 
     function activate() {
       var active = doc.activeElement;
       var el = doc.querySelector(".is-focused");
       if (state.screen === "connect") { signIn(); return; }
-      if (state.screen === "platforms" && el && el.getAttribute("data-card") && !el.hidden) {
-        el.click();
-        return;
-      }
-      if (active && active.id === "search-input") {
-        submitSearch();
-        return;
-      }
+      if (active && active.id === "console-filter") return;
+      if (active && active.id === "library-search") { submitLibrary(); return; }
+      if (active && active.id === "game-search") { submitGameSearch(); return; }
+      if (state.shots && state.shots.open) return;
       if (!el) return;
-      if (el.id === "search-input") { submitSearch(); return; }
+      if (el.id === "console-filter") return;
+      if (el.id === "library-search") { submitLibrary(); return; }
+      if (el.id === "game-search") { submitGameSearch(); return; }
+      if (el.id === "shot-preview") {
+        applyShotNav(gameScreenshotNav(shotView(), "confirm"));
+        return;
+      }
+      if (el.id === "tab-consoles") { selectTab("consoles"); return; }
+      if (el.id === "tab-collections") { selectTab("collections"); return; }
+      if (el.getAttribute("data-card") && !el.hidden) { el.click(); return; }
       el.click();
     }
 
@@ -1321,6 +1710,13 @@
       if (lastHardware.name === name && now - lastHardware.at < 32) return;
       lastHardware.name = name;
       lastHardware.at = now;
+      if (state.screen === "game" && state.shots && state.shots.open) {
+        if (name === "left" || name === "right" || name === "back") {
+          applyShotNav(gameScreenshotNav(shotView(), name));
+          return;
+        }
+        return;
+      }
       if (name === "back") { goBack(); return; }
       if (name === "confirm") { activate(); return; }
       moveFocus(name);
@@ -1476,9 +1872,12 @@
     };
 
     doc.getElementById("btn-sign-in").addEventListener("click", signIn);
-    doc.getElementById("btn-back").addEventListener("click", goBack);
-    doc.getElementById("btn-search").addEventListener("click", toggleSearch);
     doc.getElementById("btn-download").addEventListener("click", function () { startDownload(focusedRom()); });
+    doc.getElementById("tab-consoles").addEventListener("click", function () { selectTab("consoles"); });
+    doc.getElementById("tab-collections").addEventListener("click", function () { selectTab("collections"); });
+    doc.getElementById("shot-preview").addEventListener("click", function () {
+      applyShotNav(gameScreenshotNav(shotView(), "confirm"));
+    });
     doc.getElementById("btn-settings").addEventListener("click", function () {
       state.returnScreen = state.screen === "settings" ? state.returnScreen : state.screen;
       refreshFolders();
@@ -1498,12 +1897,14 @@
     doc.getElementById("btn-clear-scraper").addEventListener("click", clearScraperForm);
     doc.getElementById("btn-scrape").addEventListener("click", function () { startScrape(state.game); });
     doc.getElementById("game-card").addEventListener("click", function () { startDownload(state.game); });
-    doc.getElementById("search-input").addEventListener("input", function (event) {
-      if (state.screen !== "platforms") {
-        planGameSearch({ mode: "draft", query: event.target.value, previous: state.gameSearch });
-        return;
-      }
+    doc.getElementById("console-filter").addEventListener("input", function (event) {
       applyPlatformFilter(event.target.value);
+    });
+    doc.getElementById("game-search").addEventListener("input", function (event) {
+      planGameSearch({ mode: "draft", query: event.target.value, previous: state.gameSearch });
+    });
+    doc.getElementById("library-search").addEventListener("input", function (event) {
+      planLibrarySearch({ mode: "draft", query: event.target.value, previous: state.libraryQuery });
     });
     doc.addEventListener("keydown", function (event) {
       var action = "";

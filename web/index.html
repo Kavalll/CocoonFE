@@ -31,8 +31,20 @@
     .card-meta, #cover-note, #rescan-note { font-size: 13px; font-weight: 700; }
     img.cover { width: 72px; height: 96px; object-fit: cover; border-radius: 18px; background: rgba(0, 0, 0, 0.12); }
     #game-summary { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.35; }
-    .shots { display: flex; gap: 8px; overflow-x: auto; }
-    .shots img { width: 140px; height: 80px; object-fit: cover; border-radius: 16px; flex: 0 0 auto; background: rgba(0, 0, 0, 0.12); }
+    #find-bar { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; padding: 4px 10px 0; }
+    .find { flex: 1 1 160px; min-width: 0; min-height: 0; padding: 6px 10px; gap: 2px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+    .tabs .choice { flex: 1 1 0; min-height: 48px; }
+    .game-split { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; }
+    .game-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+    #shot-preview { flex: 0 0 200px; width: 200px; max-width: 42%; height: 124px; min-height: 124px; padding: 8px; overflow: hidden; }
+    #shot-preview img, #shot-carousel img { width: 100%; height: 100%; object-fit: contain; border-radius: 16px; background: rgba(0, 0, 0, 0.12); }
+    #shot-carousel {
+      position: fixed; z-index: 4; left: 8px; right: 8px; top: 8px; bottom: 8px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px;
+    }
+    #shot-carousel img { flex: 1 1 auto; min-height: 0; }
+    #shot-count { margin: 0; font-size: 14px; }
     .stack { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
     label.field { min-height: 64px; }
     input[type="text"], input[type="password"], input[type="url"] { width: 100%; min-height: 40px; font: 700 16px/1.2 "Trebuchet MS", "Segoe UI", sans-serif; border-radius: 16px; padding: 6px 10px; }
@@ -76,7 +88,13 @@
       .cloud.c3 { display: none; }
       .cloud.c1, .cloud.c2 { transform: scale(0.55); transform-origin: top left; }
       #game-summary { font-size: 13px; max-height: 4.5em; overflow: auto; }
-      .shots img { width: 96px; height: 54px; }
+      #find-bar { gap: 4px; padding-top: 0; }
+      #find-bar .find { min-height: 0; padding: 4px 8px; }
+      .find input { min-height: 32px; font-size: 14px; }
+      .tabs { margin-bottom: 4px; }
+      .tabs .choice { min-height: 40px; }
+      .game-split { gap: 6px; }
+      #shot-preview { flex-basis: 132px; width: 132px; max-width: 42%; height: 84px; min-height: 84px; padding: 4px; }
       .card, .choice { min-height: 56px; padding: 8px 10px; border-radius: 22px; }
       .card-title, .choice { font-size: 15px; }
       img.cover { width: 40px; height: 54px; border-radius: 12px; }
@@ -90,6 +108,7 @@
       .grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
       .card, .choice { min-height: 88px; border-radius: 32px; }
       img.cover { width: 84px; height: 112px; }
+      #shot-preview { flex-basis: 280px; width: 280px; height: 168px; min-height: 168px; }
     }
   </style>
 </head>
@@ -116,8 +135,10 @@
       <p id="status"></p>
       <p id="download-progress"></p>
     </header>
-    <div id="search-layer" hidden>
-      <input id="search-input" data-focus="1" data-zone="field" data-focus-id="search-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Filter consoles">
+    <div id="find-bar" hidden>
+      <label id="console-filter-label" class="find field">Consoles<input id="console-filter" data-focus="1" data-zone="chrome" data-focus-id="console-filter" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Filter consoles"></label>
+      <label id="game-search-label" class="find field" hidden>This console<input id="game-search" data-focus="1" data-zone="chrome" data-focus-id="game-search" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search this console, then confirm"></label>
+      <label id="library-search-label" class="find field">All consoles<input id="library-search" data-focus="1" data-zone="chrome" data-focus-id="library-search" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search all consoles, then confirm"></label>
     </div>
     <main>
       <section id="screen-connect" class="stack">
@@ -128,23 +149,38 @@
         <button type="button" id="btn-sign-in" data-focus="1" data-zone="page" data-focus-id="btn-sign-in" class="choice">Sign in</button>
       </section>
       <section id="screen-platforms" hidden>
+        <div id="library-tabs" class="tabs">
+          <button type="button" id="tab-consoles" data-focus="1" data-zone="tab" data-focus-id="tab-consoles" class="choice is-selected">Consoles</button>
+          <button type="button" id="tab-collections" data-focus="1" data-zone="tab" data-focus-id="tab-collections" class="choice">Collections</button>
+        </div>
         <div id="platform-grid" class="grid"></div>
+        <div id="collection-grid" class="grid" hidden></div>
       </section>
       <section id="screen-games" hidden>
         <div id="game-grid" class="grid"></div>
       </section>
-      <section id="screen-game" class="stack" hidden>
-        <div id="game-card" data-focus="1" data-zone="page" data-focus-id="game-card" class="card">
-          <img id="game-cover" class="cover" alt="" width="72" height="96" hidden>
-          <span id="game-title" class="card-title"></span>
-          <span id="game-file" class="card-meta"></span>
-          <span id="game-dest" class="card-meta"></span>
-          <p id="game-summary" hidden></p>
+      <section id="screen-game" hidden>
+        <div class="game-split">
+          <div class="game-main">
+            <div id="game-card" data-focus="1" data-zone="page" data-focus-id="game-card" class="card">
+              <img id="game-cover" class="cover" alt="" width="72" height="96" hidden>
+              <span id="game-title" class="card-title"></span>
+              <span id="game-file" class="card-meta"></span>
+              <span id="game-dest" class="card-meta"></span>
+              <p id="game-summary" hidden></p>
+            </div>
+            <button type="button" id="btn-scrape" data-focus="1" data-zone="page" data-focus-id="btn-scrape" class="choice">Scrape art</button>
+            <p id="cover-note" hidden></p>
+            <p id="rescan-note" hidden></p>
+          </div>
+          <button type="button" id="shot-preview" data-focus="1" data-zone="preview" data-focus-id="shot-preview" class="card" hidden aria-label="Screenshots">
+            <img id="shot-preview-img" alt="" width="200" height="124">
+          </button>
         </div>
-        <div id="game-shots" class="shots" hidden></div>
-        <button type="button" id="btn-scrape" data-focus="1" data-zone="page" data-focus-id="btn-scrape" class="choice">Scrape art</button>
-        <p id="cover-note" hidden></p>
-        <p id="rescan-note" hidden></p>
+        <div id="shot-carousel" data-focus="1" data-zone="carousel" data-focus-id="shot-carousel" class="card" hidden>
+          <img id="shot-carousel-img" alt="">
+          <p id="shot-count"></p>
+        </div>
       </section>
       <section id="screen-settings" class="stack" hidden>
         <button type="button" id="btn-rom-root" data-focus="1" data-zone="page" data-focus-id="btn-rom-root" class="choice">ROM root <span id="rom-root-label">No folder chosen</span></button>
@@ -166,9 +202,7 @@
       </section>
     </main>
     <nav id="bar">
-      <button type="button" id="btn-back" data-focus="1" data-zone="footer" data-focus-id="btn-back">Back</button>
-      <button type="button" id="btn-search" data-focus="1" data-zone="footer" data-focus-id="btn-search">Search</button>
-      <button type="button" id="btn-download" data-focus="1" data-zone="footer" data-focus-id="btn-download">Download</button>
+      <button type="button" id="btn-download" data-focus="1" data-zone="footer" data-focus-id="btn-download" hidden>Download</button>
       <button type="button" id="btn-settings" data-focus="1" data-zone="footer" data-focus-id="btn-settings">Settings</button>
     </nav>
   </div>
