@@ -11,17 +11,11 @@
     #boot-fallback { padding: 24px; }
     #app { height: 100%; display: flex; flex-direction: column; position: relative; overflow: hidden; }
     .sky { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-    .cloud { position: absolute; background: var(--cloud); border-radius: 40px; height: 38px; }
-    .cloud:before, .cloud:after { content: ""; position: absolute; background: var(--cloud); border-radius: 50%; }
-    .cloud.c1 { width: 120px; top: 18px; left: 6%; }
-    .cloud.c1:before { width: 46px; height: 46px; top: -22px; left: 18px; }
-    .cloud.c1:after { width: 64px; height: 64px; top: -32px; left: 46px; }
-    .cloud.c2 { width: 160px; top: 8px; right: 8%; }
-    .cloud.c2:before { width: 54px; height: 54px; top: -26px; left: 28px; }
-    .cloud.c2:after { width: 78px; height: 78px; top: -40px; left: 68px; }
-    .cloud.c3 { width: 100px; bottom: 72px; left: 18%; opacity: 0.85; }
-    .cloud.c3:before { width: 40px; height: 40px; top: -18px; left: 14px; }
-    .cloud.c3:after { width: 56px; height: 56px; top: -28px; left: 40px; }
+    .cloud { position: absolute; overflow: visible; color: var(--cloud); }
+    .cloud path { fill: currentColor; }
+    .cloud.c1 { width: 260px; height: 90px; top: -24px; left: -18px; }
+    .cloud.c2 { width: 220px; height: 120px; top: -30px; right: -12px; }
+    .cloud.c3 { width: 170px; height: 78px; top: 18%; left: 46%; opacity: 0.55; }
     header, #search-layer, main, #bar { position: relative; z-index: 1; }
     header { flex: 0 0 auto; padding: 8px 12px 0; }
     header h1 { margin: 0; font-size: 22px; letter-spacing: 0.02em; }
@@ -36,6 +30,9 @@
     .group-label { margin: 8px 4px 0; }
     .card-meta, #cover-note, #rescan-note { font-size: 13px; font-weight: 700; }
     img.cover { width: 72px; height: 96px; object-fit: cover; border-radius: 18px; background: rgba(0, 0, 0, 0.12); }
+    #game-summary { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.35; }
+    .shots { display: flex; gap: 8px; overflow-x: auto; }
+    .shots img { width: 140px; height: 80px; object-fit: cover; border-radius: 16px; flex: 0 0 auto; background: rgba(0, 0, 0, 0.12); }
     .stack { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
     label.field { min-height: 64px; }
     input[type="text"], input[type="password"], input[type="url"] { width: 100%; min-height: 40px; font: 700 16px/1.2 "Trebuchet MS", "Segoe UI", sans-serif; border-radius: 16px; padding: 6px 10px; }
@@ -77,7 +74,9 @@
       #subtitle { display: none; }
       #connect-hint { font-size: 13px; margin: 0; }
       .cloud.c3 { display: none; }
-      .cloud.c1, .cloud.c2 { transform: scale(0.7); transform-origin: top left; }
+      .cloud.c1, .cloud.c2 { transform: scale(0.55); transform-origin: top left; }
+      #game-summary { font-size: 13px; max-height: 4.5em; overflow: auto; }
+      .shots img { width: 96px; height: 54px; }
       .card, .choice { min-height: 56px; padding: 8px 10px; border-radius: 22px; }
       .card-title, .choice { font-size: 15px; }
       img.cover { width: 40px; height: 54px; border-radius: 12px; }
@@ -98,9 +97,18 @@
   <div id="boot-fallback">Starting Cocoon RomM Shelf…</div>
   <div id="app" hidden>
     <div class="sky" aria-hidden="true">
-      <span class="cloud c1"></span>
-      <span class="cloud c2"></span>
-      <span class="cloud c3"></span>
+      <svg class="cloud c1" viewBox="-20 -24 300 120" aria-hidden="true">
+        <defs><filter id="cloud-soft-1" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>
+        <path filter="url(#cloud-soft-1)" d="M28 78C18 62 36 48 58 54C62 28 98 22 118 42C126 18 168 16 188 40C214 22 268 36 258 62C276 70 262 92 228 88C180 102 90 98 28 78Z"/>
+      </svg>
+      <svg class="cloud c2" viewBox="-16 -28 240 150" aria-hidden="true">
+        <defs><filter id="cloud-soft-2" x="-20%" y="-30%" width="150%" height="170%"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+        <path filter="url(#cloud-soft-2)" d="M46 108C20 92 16 58 42 50C36 22 78 8 104 32C118 6 168 14 176 46C210 28 236 58 214 84C228 112 176 128 132 112C96 126 64 122 46 108Z"/>
+      </svg>
+      <svg class="cloud c3" viewBox="-12 -16 180 100" aria-hidden="true">
+        <defs><filter id="cloud-soft-3" x="-25%" y="-35%" width="150%" height="170%"><feGaussianBlur stdDeviation="2"/></filter></defs>
+        <path filter="url(#cloud-soft-3)" d="M24 62C10 50 18 28 40 30C46 10 86 12 92 34C118 18 156 36 142 56C154 70 132 86 104 78C70 90 36 78 24 62Z"/>
+      </svg>
     </div>
     <header>
       <h1 id="title">Cocoon RomM Shelf</h1>
@@ -131,7 +139,9 @@
           <span id="game-title" class="card-title"></span>
           <span id="game-file" class="card-meta"></span>
           <span id="game-dest" class="card-meta"></span>
+          <p id="game-summary" hidden></p>
         </div>
+        <div id="game-shots" class="shots" hidden></div>
         <button type="button" id="btn-scrape" data-focus="1" data-zone="page" data-focus-id="btn-scrape" class="choice">Scrape art</button>
         <p id="cover-note" hidden></p>
         <p id="rescan-note" hidden></p>
@@ -729,6 +739,56 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     return { method: "password", username: user, secret: value };
   }
 
+  function nextPageFocus(existingIds, addedIds) {
+    var keep = [];
+    var existing = existingIds || [];
+    var added = addedIds || [];
+    var i;
+    for (i = 0; i < existing.length; i++) keep.push(existing[i]);
+    for (i = 0; i < added.length; i++) keep.push(added[i]);
+    return {
+      keepIds: keep,
+      focusId: added.length ? String(added[0]) : null,
+      resetToFirst: false
+    };
+  }
+
+  function romSummary(rom) {
+    if (!rom) return "";
+    var text = trimText(rom.summary);
+    if (!text) text = trimText(rom.description);
+    return text;
+  }
+
+  function pushScreenshot(out, seen, value) {
+    if (value == null) return;
+    if (Object.prototype.toString.call(value) === "[object Array]") {
+      for (var i = 0; i < value.length; i++) pushScreenshot(out, seen, value[i]);
+      return;
+    }
+    if (typeof value === "object") {
+      pushScreenshot(out, seen, value.url || value.path || value.download_path || "");
+      return;
+    }
+    var text = trimText(value);
+    if (!text || seen[text]) return;
+    seen[text] = true;
+    out.push(text);
+  }
+
+  function romScreenshotPaths(rom) {
+    var out = [];
+    var seen = {};
+    if (!rom) return out;
+    pushScreenshot(out, seen, rom.merged_screenshots);
+    if (!out.length) {
+      pushScreenshot(out, seen, rom.path_screenshots);
+      pushScreenshot(out, seen, rom.url_screenshots);
+      pushScreenshot(out, seen, rom.screenshot_path);
+    }
+    return out;
+  }
+
   function coverField(rom, key) {
     if (!rom) return "";
     return trimText(rom[key]);
@@ -1029,6 +1089,9 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
     isPairCode: isPairCode,
     isClientToken: isClientToken,
     detectSignIn: detectSignIn,
+    nextPageFocus: nextPageFocus,
+    romSummary: romSummary,
+    romScreenshotPaths: romScreenshotPaths,
     coverUrl: coverUrl,
     romCoverCandidates: romCoverCandidates,
     coverRequestUrls: coverRequestUrls,
@@ -1291,7 +1354,9 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       var urls = img.getAttribute("data-cover-urls");
       if (!urls) return;
       function run() {
-        host.RommNative.fetchCover(Number(img.getAttribute("data-cover-id")), urls);
+        var coverId = img.getAttribute("data-cover-id");
+        if (/^\d+$/.test(String(coverId || ""))) host.RommNative.fetchCover(Number(coverId), urls);
+        else if (host.RommNative.fetchImage) host.RommNative.fetchImage(coverId, urls);
       }
       if (typeof host.IntersectionObserver !== "function") {
         run();
@@ -1304,7 +1369,10 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
             var node = entries[i].target;
             coverObserver.unobserve(node);
             var queued = node.getAttribute("data-cover-urls");
-            if (queued) host.RommNative.fetchCover(Number(node.getAttribute("data-cover-id")), queued);
+            if (!queued) continue;
+            var coverId = node.getAttribute("data-cover-id");
+            if (/^\d+$/.test(String(coverId || ""))) host.RommNative.fetchCover(Number(coverId), queued);
+            else if (host.RommNative.fetchImage) host.RommNative.fetchImage(coverId, queued);
           }
         }, { root: null });
       }
@@ -1388,12 +1456,29 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
         state.romsById = {};
         state.gamesLoaded = 0;
       }
+      var previousIds = [];
+      if (!replace) {
+        var kept = grid.querySelectorAll("[data-card]");
+        for (var c = 0; c < kept.length; c++) {
+          if (kept[c].id === "btn-more") continue;
+          previousIds.push(kept[c].getAttribute("data-id"));
+        }
+      }
+      var addedIds = [];
+      for (var a = 0; a < page.items.length; a++) addedIds.push(String(page.items[a].id));
       appendGames(page.items);
       state.gamesLoaded += page.items.length;
       state.gamesTotal = page.total;
       if (hasMore(page)) appendMore();
       setStatus("");
-      if (replace) focusDefault();
+      if (replace) {
+        focusDefault();
+        return;
+      }
+      var plan = nextPageFocus(previousIds, addedIds);
+      if (!plan.focusId) return;
+      var fresh = grid.querySelector('[data-id="' + plan.focusId + '"]');
+      if (fresh) setFocus(fresh, false);
     }
 
     function openPlatform(platform) {
@@ -1423,6 +1508,36 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       });
     }
 
+    function showGameDetails(rom) {
+      var summary = doc.getElementById("game-summary");
+      var text = romSummary(rom);
+      if (summary) {
+        summary.textContent = text;
+        summary.hidden = !text;
+      }
+      var strip = doc.getElementById("game-shots");
+      if (!strip) return;
+      strip.textContent = "";
+      var paths = romScreenshotPaths(rom);
+      if (!paths.length || !state.session) {
+        strip.hidden = true;
+        return;
+      }
+      strip.hidden = false;
+      var limit = paths.length > 8 ? 8 : paths.length;
+      for (var i = 0; i < limit; i++) {
+        var img = doc.createElement("img");
+        img.className = "shot";
+        img.alt = "";
+        img.width = 140;
+        img.height = 80;
+        img.setAttribute("data-cover-id", "shot-" + rom.id + "-" + i);
+        img.setAttribute("data-cover-urls", JSON.stringify([absoluteUrl(state.session.baseUrl, paths[i])]));
+        strip.appendChild(img);
+        watchCover(img);
+      }
+    }
+
     function showCoverNote(visible) {
       var note = doc.getElementById("cover-note");
       if (!note) return;
@@ -1440,6 +1555,7 @@ window.__SHELF_MAP__ = {"version":1,"description":"Maps Cocoon platform uniqueId
       doc.getElementById("game-file").textContent = rom.fs_name || fileName;
       doc.getElementById("game-dest").textContent = dest.folderName + "/" + fileName;
       paintCover(doc.getElementById("game-cover"), rom, "large");
+      showGameDetails(rom);
       showCoverNote(!!rom.shelfCover || romCoverCandidates(rom, "large").length > 0);
       var note = doc.getElementById("rescan-note");
       if (note) {

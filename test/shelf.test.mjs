@@ -237,6 +237,36 @@ test("connect detects password, token, or pairing code and has one sign-in actio
   assert.equal(shelf.nextFocusTarget(form, "btn-sign-in", "down"), "btn-back");
 });
 
+test("the next page keeps earlier cards and focuses the first new one", () => {
+  const plan = shelf.nextPageFocus(["1", "2", "3"], ["4", "5", "6"]);
+  assert.deepEqual(plan.keepIds, ["1", "2", "3", "4", "5", "6"]);
+  assert.equal(plan.focusId, "4");
+  assert.equal(plan.resetToFirst, false);
+  assert.notEqual(plan.focusId, plan.keepIds[0]);
+  const empty = shelf.nextPageFocus(["1"], []);
+  assert.deepEqual(empty.keepIds, ["1"]);
+  assert.equal(empty.focusId, null);
+  assert.equal(empty.resetToFirst, false);
+});
+
+test("game details use the RomM summary and screenshot paths", () => {
+  const rom = {
+    summary: "  A hero wakes the wind.  ",
+    description: "unused when summary exists",
+    merged_screenshots: ["/assets/romm/shot-a.jpg", "https://images.example/shot-b.jpg"],
+    url_screenshots: ["https://images.example/extra.jpg"]
+  };
+  assert.equal(shelf.romSummary(rom), "A hero wakes the wind.");
+  assert.deepEqual(shelf.romScreenshotPaths(rom), ["/assets/romm/shot-a.jpg", "https://images.example/shot-b.jpg"]);
+  assert.equal(shelf.romSummary({ description: " Only the fallback. " }), "Only the fallback.");
+  assert.equal(shelf.romSummary({}), "");
+  assert.deepEqual(shelf.romScreenshotPaths({ path_screenshots: ["shots/1.png"], url_screenshots: ["https://cdn.example/2.png"], screenshot_path: "shots/1.png" }), [
+    "shots/1.png",
+    "https://cdn.example/2.png"
+  ]);
+  assert.deepEqual(shelf.romScreenshotPaths({ summary: "No pictures" }), []);
+});
+
 test("inlined script has no raw closing tag and parses", () => {
   const hostile = 'var token = "$&"; var markup = "</script></body></style>";';
   const broken = "<body></body>".replace("</body>", "<script>" + hostile + "</script></body>");

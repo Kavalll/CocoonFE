@@ -1,6 +1,6 @@
 {
   "name": "cocoon-romm-shelf",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Cocoon RomM Shelf signs in to your RomM server and saves ROMs into the folders Cocoon already scans.",
   "scripts": {

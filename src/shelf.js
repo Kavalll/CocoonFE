@@ -330,6 +330,56 @@
     return { method: "password", username: user, secret: value };
   }
 
+  function nextPageFocus(existingIds, addedIds) {
+    var keep = [];
+    var existing = existingIds || [];
+    var added = addedIds || [];
+    var i;
+    for (i = 0; i < existing.length; i++) keep.push(existing[i]);
+    for (i = 0; i < added.length; i++) keep.push(added[i]);
+    return {
+      keepIds: keep,
+      focusId: added.length ? String(added[0]) : null,
+      resetToFirst: false
+    };
+  }
+
+  function romSummary(rom) {
+    if (!rom) return "";
+    var text = trimText(rom.summary);
+    if (!text) text = trimText(rom.description);
+    return text;
+  }
+
+  function pushScreenshot(out, seen, value) {
+    if (value == null) return;
+    if (Object.prototype.toString.call(value) === "[object Array]") {
+      for (var i = 0; i < value.length; i++) pushScreenshot(out, seen, value[i]);
+      return;
+    }
+    if (typeof value === "object") {
+      pushScreenshot(out, seen, value.url || value.path || value.download_path || "");
+      return;
+    }
+    var text = trimText(value);
+    if (!text || seen[text]) return;
+    seen[text] = true;
+    out.push(text);
+  }
+
+  function romScreenshotPaths(rom) {
+    var out = [];
+    var seen = {};
+    if (!rom) return out;
+    pushScreenshot(out, seen, rom.merged_screenshots);
+    if (!out.length) {
+      pushScreenshot(out, seen, rom.path_screenshots);
+      pushScreenshot(out, seen, rom.url_screenshots);
+      pushScreenshot(out, seen, rom.screenshot_path);
+    }
+    return out;
+  }
+
   function coverField(rom, key) {
     if (!rom) return "";
     return trimText(rom[key]);
@@ -630,6 +680,9 @@
     isPairCode: isPairCode,
     isClientToken: isClientToken,
     detectSignIn: detectSignIn,
+    nextPageFocus: nextPageFocus,
+    romSummary: romSummary,
+    romScreenshotPaths: romScreenshotPaths,
     coverUrl: coverUrl,
     romCoverCandidates: romCoverCandidates,
     coverRequestUrls: coverRequestUrls,
@@ -892,7 +945,9 @@
       var urls = img.getAttribute("data-cover-urls");
       if (!urls) return;
       function run() {
-        host.RommNative.fetchCover(Number(img.getAttribute("data-cover-id")), urls);
+        var coverId = img.getAttribute("data-cover-id");
+        if (/^\d+$/.test(String(coverId || ""))) host.RommNative.fetchCover(Number(coverId), urls);
+        else if (host.RommNative.fetchImage) host.RommNative.fetchImage(coverId, urls);
       }
       if (typeof host.IntersectionObserver !== "function") {
         run();
@@ -905,7 +960,10 @@
             var node = entries[i].target;
             coverObserver.unobserve(node);
             var queued = node.getAttribute("data-cover-urls");
-            if (queued) host.RommNative.fetchCover(Number(node.getAttribute("data-cover-id")), queued);
+            if (!queued) continue;
+            var coverId = node.getAttribute("data-cover-id");
+            if (/^\d+$/.test(String(coverId || ""))) host.RommNative.fetchCover(Number(coverId), queued);
+            else if (host.RommNative.fetchImage) host.RommNative.fetchImage(coverId, queued);
           }
         }, { root: null });
       }
@@ -989,12 +1047,29 @@
         state.romsById = {};
         state.gamesLoaded = 0;
       }
+      var previousIds = [];
+      if (!replace) {
+        var kept = grid.querySelectorAll("[data-card]");
+        for (var c = 0; c < kept.length; c++) {
+          if (kept[c].id === "btn-more") continue;
+          previousIds.push(kept[c].getAttribute("data-id"));
+        }
+      }
+      var addedIds = [];
+      for (var a = 0; a < page.items.length; a++) addedIds.push(String(page.items[a].id));
       appendGames(page.items);
       state.gamesLoaded += page.items.length;
       state.gamesTotal = page.total;
       if (hasMore(page)) appendMore();
       setStatus("");
-      if (replace) focusDefault();
+      if (replace) {
+        focusDefault();
+        return;
+      }
+      var plan = nextPageFocus(previousIds, addedIds);
+      if (!plan.focusId) return;
+      var fresh = grid.querySelector('[data-id="' + plan.focusId + '"]');
+      if (fresh) setFocus(fresh, false);
     }
 
     function openPlatform(platform) {
@@ -1024,6 +1099,36 @@
       });
     }
 
+    function showGameDetails(rom) {
+      var summary = doc.getElementById("game-summary");
+      var text = romSummary(rom);
+      if (summary) {
+        summary.textContent = text;
+        summary.hidden = !text;
+      }
+      var strip = doc.getElementById("game-shots");
+      if (!strip) return;
+      strip.textContent = "";
+      var paths = romScreenshotPaths(rom);
+      if (!paths.length || !state.session) {
+        strip.hidden = true;
+        return;
+      }
+      strip.hidden = false;
+      var limit = paths.length > 8 ? 8 : paths.length;
+      for (var i = 0; i < limit; i++) {
+        var img = doc.createElement("img");
+        img.className = "shot";
+        img.alt = "";
+        img.width = 140;
+        img.height = 80;
+        img.setAttribute("data-cover-id", "shot-" + rom.id + "-" + i);
+        img.setAttribute("data-cover-urls", JSON.stringify([absoluteUrl(state.session.baseUrl, paths[i])]));
+        strip.appendChild(img);
+        watchCover(img);
+      }
+    }
+
     function showCoverNote(visible) {
       var note = doc.getElementById("cover-note");
       if (!note) return;
@@ -1041,6 +1146,7 @@
       doc.getElementById("game-file").textContent = rom.fs_name || fileName;
       doc.getElementById("game-dest").textContent = dest.folderName + "/" + fileName;
       paintCover(doc.getElementById("game-cover"), rom, "large");
+      showGameDetails(rom);
       showCoverNote(!!rom.shelfCover || romCoverCandidates(rom, "large").length > 0);
       var note = doc.getElementById("rescan-note");
       if (note) {

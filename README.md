@@ -17,7 +17,7 @@
 
 Dock companion for an AYN Thor. It signs in to the RomM server you already run and writes ROM files into the folders Cocoon scans. It is not a launcher, not a RomM server, and not a tab inside Cocoon.
 
-Build on Windows from `cmd`. Use JDK 17 in Android Studio. Do not use JDK 25 or Gradle 9. This project pins Gradle 8.9 and Android Gradle Plugin 8.7.3. The launcher label is `Cocoon RomM Shelf 0.1.3`. Bright and dark cloud themes are in Settings. Covers already stored on RomM are shown in the app. CocoonFE does not document a cover filename Cocoon scans, so a cover is not copied into the ROM folder.
+Build on Windows from `cmd`. Use JDK 17 in Android Studio. Do not use JDK 25 or Gradle 9. This project pins Gradle 8.9 and Android Gradle Plugin 8.7.3. The launcher label is `Cocoon RomM Shelf 0.1.4`. Bright and dark cloud themes are in Settings. Covers already stored on RomM are shown in the app. CocoonFE does not document a cover filename Cocoon scans, so a cover is not copied into the ROM folder.
 
 ```bat
 git clone https://github.com/Kavalll/CocoonFE.git

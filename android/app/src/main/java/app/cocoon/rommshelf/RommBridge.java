@@ -242,6 +242,11 @@ public final class RommBridge {
 
     @JavascriptInterface
     public void fetchCover(final int id, final String urlsJson) {
+        fetchImage(String.valueOf(id), urlsJson);
+    }
+
+    @JavascriptInterface
+    public void fetchImage(final String id, final String urlsJson) {
         io.execute(() -> {
             try {
                 JSONArray urls = parseUrlList(urlsJson);
@@ -260,7 +265,7 @@ public final class RommBridge {
                     String mime = imageType(result);
                     if (mime.isEmpty()) continue;
                     String data = "data:" + mime + ";base64," + Base64.encodeToString(result.bytes, Base64.NO_WRAP);
-                    emit("CocoonShelf.onCover(" + id + "," + JSONObject.quote(data) + ")");
+                    emit("CocoonShelf.onCover(" + JSONObject.quote(id) + "," + JSONObject.quote(data) + ")");
                     return;
                 }
             } catch (Exception ignored) {
