@@ -1,0 +1,4 @@
+{
+  "name": "CocoonFE platform tooling",
+  "install": "python3 --version && python3 -m py_compile platforms/generate_index.py platforms/curator.py"
+}
