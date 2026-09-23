@@ -207,6 +207,36 @@ test("RomM covers use stored paths before a scrape, and no Cocoon sidecar is inv
   assert.equal(shelf.scrapeStart({ sgdbKey: "secret-key" }, game).phase, "sg-search");
 });
 
+test("connect detects password, token, or pairing code and has one sign-in action", () => {
+  assert.equal(shelf.detectSignIn("ada", "hunter2").method, "password");
+  assert.equal(shelf.detectSignIn("ada", "hunter2").secret, "hunter2");
+  assert.equal(shelf.detectSignIn("", "hunter2").method, "");
+  assert.equal(shelf.detectSignIn("", "rmm_abc").method, "token");
+  assert.equal(shelf.detectSignIn("ada", " rmm_abc ").method, "token");
+  assert.equal(shelf.detectSignIn("", "12345678").method, "pair");
+  assert.equal(shelf.detectSignIn("ada", "12345678").method, "pair");
+  assert.equal(shelf.detectSignIn("", "1234567").method, "");
+  const html = readFileSync(path.join(root, "web", "index.html"), "utf8");
+  const connect = html.slice(html.indexOf('id="screen-connect"'), html.indexOf('id="screen-platforms"'));
+  assert.equal((connect.match(/<button/g) || []).length, 1);
+  assert.match(connect, /id="btn-sign-in"/);
+  assert.equal((connect.match(/Password, an rmm_ token, or an 8-digit code\./g) || []).length, 1);
+  assert.equal(connect.includes("btn-password"), false);
+  assert.equal(connect.includes("btn-token"), false);
+  assert.equal(connect.includes("btn-pair"), false);
+  assert.equal(connect.includes("client-token"), false);
+  assert.equal(connect.includes("pair-code"), false);
+  const form = [
+    { id: "secret", zone: "page", left: 8, top: 40, width: 200, height: 56 },
+    { id: "btn-sign-in", zone: "page", left: 8, top: 110, width: 200, height: 56 },
+    { id: "btn-settings", zone: "footer", left: 240, top: 48, width: 90, height: 56 },
+    { id: "btn-back", zone: "footer", left: 8, top: 300, width: 90, height: 56 }
+  ];
+  assert.equal(shelf.nextFocusTarget(form, "secret", "right"), "secret");
+  assert.equal(shelf.nextFocusTarget(form, "btn-settings", "left"), "btn-settings");
+  assert.equal(shelf.nextFocusTarget(form, "btn-sign-in", "down"), "btn-back");
+});
+
 test("inlined script has no raw closing tag and parses", () => {
   const hostile = 'var token = "$&"; var markup = "</script></body></style>";';
   const broken = "<body></body>".replace("</body>", "<script>" + hostile + "</script></body>");

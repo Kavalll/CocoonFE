@@ -25,7 +25,7 @@
     header, #search-layer, main, #bar { position: relative; z-index: 1; }
     header { flex: 0 0 auto; padding: 8px 12px 0; }
     header h1 { margin: 0; font-size: 22px; letter-spacing: 0.02em; }
-    #subtitle, #status, #download-progress, #rescan-note, #cover-note { margin: 2px 0; font-size: 14px; font-weight: 700; }
+    #subtitle, #status, #download-progress, #rescan-note, #cover-note, #connect-hint { margin: 2px 0; font-size: 14px; font-weight: 700; }
     #download-progress { min-height: 1.1em; }
     #search-layer { flex: 0 0 auto; padding: 6px 12px 0; }
     #search-input { width: 100%; min-height: 44px; font: 700 18px/1.2 "Trebuchet MS", "Segoe UI", sans-serif; border-radius: 22px; padding: 8px 14px; }
@@ -60,7 +60,7 @@
     }
     body { background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)); color: var(--ink); }
     #boot-fallback, #noscript-fallback { color: var(--boot); }
-    #subtitle, #status, .card-meta, #cover-note, #rescan-note { color: var(--muted); }
+    #subtitle, #status, .card-meta, #cover-note, #rescan-note, #connect-hint { color: var(--muted); }
     #download-progress { color: var(--progress); }
     #search-input, input[type="text"], input[type="password"], input[type="url"] {
       background: var(--field); color: var(--ink); border: 3px solid var(--field-edge);
@@ -75,6 +75,7 @@
       header { padding-top: 4px; }
       header h1 { font-size: 16px; }
       #subtitle { display: none; }
+      #connect-hint { font-size: 13px; margin: 0; }
       .cloud.c3 { display: none; }
       .cloud.c1, .cloud.c2 { transform: scale(0.7); transform-origin: top left; }
       .card, .choice { min-height: 56px; padding: 8px 10px; border-radius: 22px; }
@@ -114,12 +115,9 @@
       <section id="screen-connect" class="stack">
         <label class="field">Server URL<input id="server-url" data-focus="1" data-zone="page" data-focus-id="server-url" type="url" autocomplete="off" placeholder="http://romm.local:8080"></label>
         <label class="field">Username<input id="username" data-focus="1" data-zone="page" data-focus-id="username" type="text" autocomplete="username"></label>
-        <label class="field">Password<input id="password" data-focus="1" data-zone="page" data-focus-id="password" type="password" autocomplete="current-password"></label>
-        <label class="field">Client token<input id="client-token" data-focus="1" data-zone="page" data-focus-id="client-token" type="text" autocomplete="off" spellcheck="false" placeholder="rmm_…"></label>
-        <label class="field">Pairing code<input id="pair-code" data-focus="1" data-zone="page" data-focus-id="pair-code" type="text" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
-        <button type="button" id="btn-password" data-focus="1" data-zone="page" data-focus-id="btn-password" class="choice">Sign in with password</button>
-        <button type="button" id="btn-token" data-focus="1" data-zone="page" data-focus-id="btn-token" class="choice">Use client token</button>
-        <button type="button" id="btn-pair" data-focus="1" data-zone="page" data-focus-id="btn-pair" class="choice">Pair with code</button>
+        <label class="field">Secret<input id="secret" data-focus="1" data-zone="page" data-focus-id="secret" type="password" autocomplete="off" spellcheck="false"></label>
+        <p id="connect-hint">Password, an rmm_ token, or an 8-digit code.</p>
+        <button type="button" id="btn-sign-in" data-focus="1" data-zone="page" data-focus-id="btn-sign-in" class="choice">Sign in</button>
       </section>
       <section id="screen-platforms" hidden>
         <div id="platform-grid" class="grid"></div>

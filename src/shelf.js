@@ -320,6 +320,16 @@
     return String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
   }
 
+  function detectSignIn(username, secret) {
+    var user = trimText(username);
+    var value = trimText(secret);
+    if (isClientToken(value)) return { method: "token", username: user, secret: value };
+    if (isPairCode(value)) return { method: "pair", username: user, secret: value };
+    if (!value) return { method: "", error: "Enter a password, token, or pairing code." };
+    if (!user) return { method: "", error: "Username is required for a password." };
+    return { method: "password", username: user, secret: value };
+  }
+
   function coverField(rom, key) {
     if (!rom) return "";
     return trimText(rom[key]);
@@ -619,6 +629,7 @@
     nextScreen: nextScreen,
     isPairCode: isPairCode,
     isClientToken: isClientToken,
+    detectSignIn: detectSignIn,
     coverUrl: coverUrl,
     romCoverCandidates: romCoverCandidates,
     coverRequestUrls: coverRequestUrls,
@@ -775,7 +786,7 @@
       if (title) title.textContent = name.charAt(0).toUpperCase() + name.slice(1);
       var subtitle = doc.getElementById("subtitle");
       if (subtitle) {
-        if (name === "connect") subtitle.textContent = "Sign in once. This device keeps the session until you log out.";
+        if (name === "connect") subtitle.textContent = "";
         else if (name === "platforms") subtitle.textContent = "Confirm opens a console. Search only filters this list.";
         else if (name === "games") subtitle.textContent = state.platform ? platformDisplayName(state.platform) : "";
         else if (name === "game") subtitle.textContent = state.platform ? platformDisplayName(state.platform) : "";
@@ -797,7 +808,7 @@
         return;
       }
       if (state.screen === "connect") {
-        setFocus(doc.getElementById("btn-password"), false);
+        setFocus(doc.getElementById("btn-sign-in"), false);
         return;
       }
       if (state.screen === "settings") {
@@ -1092,35 +1103,24 @@
       focusDefault();
     }
 
-    function signInPassword() {
+    function signIn() {
       var base;
       try { base = normalizeBaseUrl(doc.getElementById("server-url").value); }
       catch (err) { setStatus(err.message); return; }
-      var user = doc.getElementById("username").value || "";
-      var pass = doc.getElementById("password").value || "";
-      if (!user || !pass) { setStatus("Username and password are required."); return; }
+      var detected = detectSignIn(doc.getElementById("username").value, doc.getElementById("secret").value);
+      if (!detected.method) { setStatus(detected.error); return; }
+      if (detected.method === "token") {
+        setStatus("Checking token…");
+        handleAuth(native("loginToken", base, detected.secret));
+        return;
+      }
+      if (detected.method === "pair") {
+        setStatus("Pairing…");
+        handleAuth(native("loginPair", base, detected.secret));
+        return;
+      }
       setStatus("Signing in…");
-      handleAuth(native("loginPassword", base, user, pass));
-    }
-
-    function signInToken() {
-      var base;
-      try { base = normalizeBaseUrl(doc.getElementById("server-url").value); }
-      catch (err) { setStatus(err.message); return; }
-      var token = (doc.getElementById("client-token").value || "").replace(/^\s+|\s+$/g, "");
-      if (!isClientToken(token)) { setStatus("Client tokens start with rmm_."); return; }
-      setStatus("Checking token…");
-      handleAuth(native("loginToken", base, token));
-    }
-
-    function signInPair() {
-      var base;
-      try { base = normalizeBaseUrl(doc.getElementById("server-url").value); }
-      catch (err) { setStatus(err.message); return; }
-      var code = (doc.getElementById("pair-code").value || "").replace(/^\s+|\s+$/g, "");
-      if (!isPairCode(code)) { setStatus("Enter the 8-digit pairing code."); return; }
-      setStatus("Pairing…");
-      handleAuth(native("loginPair", base, code));
+      handleAuth(native("loginPassword", base, detected.username, detected.secret));
     }
 
     function forceLogout(message) {
@@ -1196,6 +1196,7 @@
     function activate() {
       var active = doc.activeElement;
       var el = doc.querySelector(".is-focused");
+      if (state.screen === "connect") { signIn(); return; }
       if (state.screen === "platforms" && el && el.getAttribute("data-card") && !el.hidden) {
         el.click();
         return;
@@ -1368,9 +1369,7 @@
       if (el) el.textContent = label || "No folder chosen";
     };
 
-    doc.getElementById("btn-password").addEventListener("click", signInPassword);
-    doc.getElementById("btn-token").addEventListener("click", signInToken);
-    doc.getElementById("btn-pair").addEventListener("click", signInPair);
+    doc.getElementById("btn-sign-in").addEventListener("click", signIn);
     doc.getElementById("btn-back").addEventListener("click", goBack);
     doc.getElementById("btn-search").addEventListener("click", toggleSearch);
     doc.getElementById("btn-download").addEventListener("click", function () { startDownload(focusedRom()); });
