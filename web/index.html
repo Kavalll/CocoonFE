@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Cocoon RomM Shelf</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #0e1114; color: #f4f1ea; }
+    body { font: 16px/1.3 "Segoe UI", Roboto, sans-serif; }
+    #boot-fallback { padding: 24px; }
+    #app { height: 100%; display: flex; flex-direction: column; }
+    header { flex: 0 0 auto; padding: 6px 10px 0; }
+    header h1 { margin: 0; font-size: 16px; }
+    #subtitle, #status, #download-progress, #rescan-note { margin: 2px 0; font-size: 13px; color: #d5d0c6; }
+    #download-progress { color: #ffe14a; min-height: 1em; }
+    #search-layer { flex: 0 0 auto; padding: 4px 10px; }
+    #search-input { width: 100%; min-height: 40px; font-size: 16px; background: #1b2128; color: #f4f1ea; border: 2px solid #8a8478; border-radius: 8px; padding: 6px 8px; }
+    main { flex: 1 1 auto; overflow: auto; padding: 6px 8px 8px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 8px; }
+    .card, .field, .choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; text-align: left; background: #1b2128; color: #f4f1ea; border: 2px solid #2c343d; border-radius: 10px; padding: 8px; min-height: 64px; }
+    .card-title, .choice { font-size: 15px; }
+    .card-meta { color: #b7b1a6; font-size: 12px; }
+    img.cover { width: 72px; height: 96px; object-fit: cover; background: #111; }
+    .stack { display: flex; flex-direction: column; gap: 8px; max-width: 520px; }
+    label.field { min-height: 56px; }
+    input[type="text"], input[type="password"], input[type="url"] { width: 100%; min-height: 36px; font-size: 16px; background: #0e1114; color: #f4f1ea; border: 1px solid #8a8478; border-radius: 6px; padding: 4px 6px; }
+    .is-focused { outline: 3px solid #ffe14a; outline-offset: 2px; }
+    .is-selected { border-color: #ffe14a; }
+    #bar { flex: 0 0 auto; display: flex; gap: 4px; padding: 4px; background: #161b20; }
+    #bar button { flex: 1 1 0; min-width: 56px; min-height: 56px; font-size: 15px; background: #2a333c; color: #f4f1ea; border: 2px solid #3d4852; border-radius: 10px; }
+    [hidden] { display: none !important; }
+    @media (max-height: 420px) {
+      header h1 { font-size: 14px; }
+      #subtitle { display: none; }
+      .card, .choice { min-height: 48px; padding: 6px; }
+      img.cover { width: 40px; height: 54px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="boot-fallback">Starting Cocoon RomM Shelf…</div>
+  <div id="app" hidden>
+    <header>
+      <h1 id="title">Cocoon RomM Shelf</h1>
+      <p id="subtitle"></p>
+      <p id="status"></p>
+      <p id="download-progress"></p>
+    </header>
+    <div id="search-layer" hidden>
+      <input id="search-input" data-focus="1" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Filter consoles">
+    </div>
+    <main>
+      <section id="screen-connect" class="stack">
+        <label class="field">Server URL<input id="server-url" data-focus="1" type="url" autocomplete="off" placeholder="http://romm.local:8080"></label>
+        <label class="field">Username<input id="username" data-focus="1" type="text" autocomplete="username"></label>
+        <label class="field">Password<input id="password" data-focus="1" type="password" autocomplete="current-password"></label>
+        <label class="field">Client token<input id="client-token" data-focus="1" type="text" autocomplete="off" spellcheck="false" placeholder="rmm_…"></label>
+        <label class="field">Pairing code<input id="pair-code" data-focus="1" type="text" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="8 digits"></label>
+        <button type="button" id="btn-password" data-focus="1" class="choice">Sign in with password</button>
+        <button type="button" id="btn-token" data-focus="1" class="choice">Use client token</button>
+        <button type="button" id="btn-pair" data-focus="1" class="choice">Pair with code</button>
+      </section>
+      <section id="screen-platforms" hidden>
+        <div id="platform-grid" class="grid"></div>
+      </section>
+      <section id="screen-games" hidden>
+        <div id="game-grid" class="grid"></div>
+      </section>
+      <section id="screen-game" hidden>
+        <div id="game-card" data-focus="1" class="card">
+          <span id="game-title" class="card-title"></span>
+          <span id="game-file" class="card-meta"></span>
+          <span id="game-dest" class="card-meta"></span>
+        </div>
+        <p id="rescan-note" hidden></p>
+      </section>
+      <section id="screen-settings" class="stack" hidden>
+        <button type="button" id="btn-rom-root" data-focus="1" class="choice">ROM root <span id="rom-root-label">No folder chosen</span></button>
+        <button type="button" id="btn-layout-cocoon" data-focus="1" class="choice">Cocoon folders</button>
+        <button type="button" id="btn-layout-romm" data-focus="1" class="choice">RomM slugs</button>
+        <button type="button" id="btn-layout-alias" data-focus="1" class="choice">Match existing folder</button>
+        <button type="button" id="btn-logout" data-focus="1" class="choice">Log out</button>
+      </section>
+    </main>
+    <nav id="bar">
+      <button type="button" id="btn-back" data-focus="1">Back</button>
+      <button type="button" id="btn-search" data-focus="1">Search</button>
+      <button type="button" id="btn-download" data-focus="1">Download</button>
+      <button type="button" id="btn-settings" data-focus="1">Settings</button>
+    </nav>
+  </div>
+  <noscript><p id="noscript-fallback">JavaScript is required for Cocoon RomM Shelf.</p></noscript>
+</body>
+</html>
