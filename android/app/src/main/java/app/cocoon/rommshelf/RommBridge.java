@@ -688,6 +688,9 @@ public final class RommBridge {
         if (bytes.length >= 3 && bytes[0] == (byte) 0xFF && bytes[1] == (byte) 0xD8) return "image/jpeg";
         if (bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F') return "image/webp";
         if (bytes.length >= 4 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') return "image/gif";
+        int sniffLen = Math.min(bytes.length, 240);
+        String head = new String(bytes, 0, sniffLen, StandardCharsets.UTF_8).toLowerCase();
+        if (head.contains("<svg")) return "image/svg+xml";
         return "";
     }
 

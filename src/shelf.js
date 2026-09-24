@@ -1,7 +1,7 @@
 (function (root) {
   "use strict";
 
-  var PAGE_SIZE = 60;
+  var PAGE_SIZE = 200;
   var years = loadYears(root);
   var YEAR = years.PLATFORM_RELEASE_YEAR || {};
   var NAME_YEARS = years.PLATFORM_NAME_YEARS || [];
@@ -349,13 +349,45 @@
   }
 
   function hardwareKeyAction(keyCode) {
-    if (keyCode === 23 || keyCode === 66 || keyCode === 160 || keyCode === 62 || keyCode === 97 || keyCode === 108) return "confirm";
-    if (keyCode === 4 || keyCode === 96 || keyCode === 111) return "back";
+    if (keyCode === 23 || keyCode === 66 || keyCode === 160 || keyCode === 62 || keyCode === 96 || keyCode === 108) return "confirm";
+    if (keyCode === 4 || keyCode === 97 || keyCode === 111) return "back";
     if (keyCode === 19) return "up";
     if (keyCode === 20) return "down";
     if (keyCode === 21) return "left";
     if (keyCode === 22) return "right";
     return "";
+  }
+
+  function listPlace(ids, focusedId, scrollTop) {
+    var list = [];
+    var source = ids || [];
+    var i;
+    for (i = 0; i < source.length; i++) list.push(String(source[i]));
+    var focus = focusedId == null || focusedId === "" ? "" : String(focusedId);
+    var index = -1;
+    for (i = 0; i < list.length; i++) if (list[i] === focus) index = i;
+    return {
+      ids: list,
+      index: index,
+      focusedId: index >= 0 ? focus : null,
+      scrollTop: typeof scrollTop === "number" ? scrollTop : 0,
+      resetToFirst: false
+    };
+  }
+
+  function platformLogoCandidates(platform) {
+    var out = [];
+    var seen = {};
+    function push(value) {
+      var text = trimText(value);
+      if (!text || seen[text]) return;
+      seen[text] = true;
+      out.push(text);
+    }
+    if (!platform) return out;
+    push(platform.logo_path);
+    push(platform.url_logo);
+    return out;
   }
 
   function collectionListPaths() {
@@ -811,6 +843,8 @@
     planLibrarySearch: planLibrarySearch,
     footerControls: footerControls,
     hardwareKeyAction: hardwareKeyAction,
+    listPlace: listPlace,
+    platformLogoCandidates: platformLogoCandidates,
     collectionListPaths: collectionListPaths,
     normalizeCollectionRows: normalizeCollectionRows,
     collectionRomsOptions: collectionRomsOptions,
@@ -875,7 +909,8 @@
       libraryReturn: null,
       collections: null,
       collection: null,
-      shots: { paths: [], index: 0, open: false, columnId: "game-card" }
+      shots: { paths: [], index: 0, open: false, columnId: "game-card" },
+      listPlace: null
     };
 
     var fallback = doc.getElementById("boot-fallback");
@@ -985,6 +1020,11 @@
         if (name === "platforms" && state.libraryTab === "collections") title.textContent = "Collections";
         else if (name === "games" && state.gamesKind === "library") title.textContent = "All consoles";
         else if (name === "games" && state.gamesKind === "collection") title.textContent = state.collection ? state.collection.name : "Collection";
+        else if (name === "games" && state.gamesKind === "platform") title.textContent = state.platform ? platformDisplayName(state.platform) : "Games";
+        else if (name === "game") {
+          var shownTitle = state.gamesKind === "platform" ? state.platform : (platformForRom(state.game) || state.platform);
+          title.textContent = shownTitle ? platformDisplayName(shownTitle) : (state.game && (state.game.name || state.game.fs_name) || "Game");
+        }
         else title.textContent = name.charAt(0).toUpperCase() + name.slice(1);
       }
       var subtitle = doc.getElementById("subtitle");
@@ -1115,8 +1155,60 @@
       var count = platform.rom_count || 0;
       var btn = makeButton(platformKey(platform), platformDisplayName(platform), (year ? String(year) : "Year unknown") + " · " + count + " games");
       btn.setAttribute("data-blob", [platform.display_name, platform.name, platform.slug, platform.fs_slug].join(" ").toLowerCase());
+      var logos = platformLogoCandidates(platform);
+      if (logos.length && state.session) {
+        var head = doc.createElement("span");
+        head.className = "card-head";
+        var img = doc.createElement("img");
+        img.className = "platform-logo";
+        img.alt = "";
+        img.width = 36;
+        img.height = 36;
+        var id = "logo-" + platformKey(platform);
+        var urls = [];
+        for (var i = 0; i < logos.length; i++) urls.push(absoluteUrl(state.session.baseUrl, logos[i]));
+        img.setAttribute("data-cover-id", id);
+        img.setAttribute("data-cover-urls", JSON.stringify(urls));
+        var title = btn.querySelector(".card-title");
+        head.appendChild(img);
+        if (title) head.appendChild(title);
+        btn.insertBefore(head, btn.firstChild);
+        if (host.RommNative && host.RommNative.fetchImage) host.RommNative.fetchImage(id, JSON.stringify(urls));
+      }
       btn.addEventListener("click", function () { openPlatform(platform); });
       return btn;
+    }
+
+    function rememberListPlace() {
+      if (state.screen !== "games") return;
+      var main = doc.querySelector("main");
+      var ids = [];
+      var cards = doc.querySelectorAll("#game-grid [data-card]");
+      for (var i = 0; i < cards.length; i++) {
+        if (cards[i].id === "btn-more") continue;
+        ids.push(cards[i].getAttribute("data-id"));
+      }
+      var el = doc.querySelector("#game-grid .is-focused");
+      var focusedId = el ? el.getAttribute("data-id") : null;
+      if (el && el.id === "btn-more") {
+        focusedId = "more";
+        ids.push("more");
+      }
+      state.listPlace = listPlace(ids, focusedId, main ? main.scrollTop : 0);
+    }
+
+    function restoreListPlace() {
+      var place = state.listPlace;
+      if (!place || !place.focusedId || place.resetToFirst) return false;
+      var card = place.focusedId === "more"
+        ? doc.getElementById("btn-more")
+        : doc.querySelector('#game-grid [data-id="' + place.focusedId + '"]');
+      if (!card) return false;
+      var main = doc.querySelector("main");
+      if (main) main.scrollTop = place.scrollTop || 0;
+      setFocus(card, false, false);
+      if (main) main.scrollTop = place.scrollTop || 0;
+      return true;
     }
 
     function renderPlatforms(list) {
@@ -1537,6 +1629,7 @@
     }
 
     function openGame(rom) {
+      rememberListPlace();
       state.game = rom;
       state.returnScreen = "games";
       showScreen("game");
@@ -1669,6 +1762,7 @@
         return;
       }
       if (target.screen === state.screen && state.screen === "platforms") return;
+      var returningToList = state.screen === "game" && target.screen === "games";
       if (target.tab) state.libraryTab = target.tab;
       showScreen(target.screen);
       if (target.screen === "platforms" && state.platformQuery) applyPlatformFilter(state.platformQuery);
@@ -1680,6 +1774,7 @@
         paintLayout();
         fillScraperForm(state.session);
       }
+      if (returningToList && restoreListPlace()) return;
       focusDefault();
     }
 

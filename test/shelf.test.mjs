@@ -354,11 +354,46 @@ test("all-consoles search is separate from the console filter", () => {
   assert.equal(shelf.backTarget({ screen: "platforms" }).finish, false);
   assert.equal(shelf.backTarget({ screen: "platforms" }).screen, "platforms");
   assert.equal(shelf.backTarget({ screen: "game" }).screen, "games");
-  assert.equal(shelf.hardwareKeyAction(96), "back");
+  assert.equal(shelf.hardwareKeyAction(96), "confirm");
   assert.equal(shelf.hardwareKeyAction(4), "back");
-  assert.equal(shelf.hardwareKeyAction(97), "confirm");
+  assert.equal(shelf.hardwareKeyAction(97), "back");
   assert.equal(shelf.hardwareKeyAction(23), "confirm");
   assert.equal(shelf.hardwareKeyAction(66), "confirm");
+});
+
+test("page size is 200 and Confirm is BUTTON_A while Back is BUTTON_B", () => {
+  assert.equal(shelf.PAGE_SIZE, 200);
+  const page = shelf.romsRequests({ platformId: 4, offset: 0 });
+  const more = shelf.romsRequests({ platformId: 4, offset: 200 });
+  assert.match(page.first, /limit=200/);
+  assert.match(page.retry, /limit=200/);
+  assert.match(more.first, /limit=200/);
+  assert.match(more.first, /offset=200/);
+  assert.equal(shelf.hardwareKeyAction(96), "confirm");
+  assert.equal(shelf.hardwareKeyAction(97), "back");
+  assert.notEqual(shelf.hardwareKeyAction(96), "back");
+  assert.equal(shelf.hardwareKeyAction(23), "confirm");
+  assert.equal(shelf.hardwareKeyAction(66), "confirm");
+  assert.equal(shelf.hardwareKeyAction(4), "back");
+});
+
+test("returning from the game screen restores the same list index", () => {
+  const place = shelf.listPlace(["10", "11", "12", "13"], "12", 880);
+  assert.equal(place.index, 2);
+  assert.equal(place.focusedId, "12");
+  assert.equal(place.scrollTop, 880);
+  assert.equal(place.resetToFirst, false);
+  assert.notEqual(place.focusedId, place.ids[0]);
+  const library = shelf.listPlace(["a", "b", "c"], "b", 240);
+  assert.equal(library.focusedId, "b");
+  assert.equal(library.index, 1);
+  assert.equal(library.resetToFirst, false);
+  const collection = shelf.listPlace(["7", "8"], "8", 120);
+  assert.equal(collection.focusedId, "8");
+  assert.equal(collection.index, 1);
+  assert.equal(collection.resetToFirst, false);
+  assert.deepEqual(shelf.platformLogoCandidates({ logo_path: "/assets/romm/platforms/snes.svg", url_logo: "https://img.example/snes.png" }), ["/assets/romm/platforms/snes.svg", "https://img.example/snes.png"]);
+  assert.deepEqual(shelf.platformLogoCandidates({ name: "NES" }), []);
 });
 
 test("the footer has no Back or Search button and Download is only on the Game screen", () => {
