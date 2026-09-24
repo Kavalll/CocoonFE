@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="bright">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Cocoon RomM Shelf</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body { font: 700 18px/1.25 "Trebuchet MS", "Segoe UI", sans-serif; }
+    #boot-fallback { padding: 24px; }
+    #app { height: 100%; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+    .sky { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+    .cloud { position: absolute; overflow: visible; color: var(--cloud); }
+    .cloud path { fill: currentColor; }
+    .cloud.c1 { width: 260px; height: 90px; top: -24px; left: -18px; }
+    .cloud.c2 { width: 220px; height: 120px; top: -30px; right: -12px; }
+    .cloud.c3 { width: 170px; height: 78px; top: 18%; left: 46%; opacity: 0.55; }
+    header, #notes, main, #bar { position: relative; z-index: 1; }
+    header { flex: 0 0 auto; display: flex; flex-direction: row; align-items: center; flex-wrap: nowrap; gap: 8px; padding: 4px 8px 0; min-height: 0; }
+    header h1 { margin: 0; flex: 0 0 auto; max-width: 34%; min-width: 0; font-size: 18px; letter-spacing: 0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #notes { flex: 0 0 auto; }
+    #subtitle, #status, #download-progress, #rescan-note, #cover-note, #connect-hint { margin: 2px 12px; font-size: 14px; font-weight: 700; }
+    #subtitle { display: none; }
+    #status:empty, #download-progress:empty { display: none; }
+    #download-progress { min-height: 0; }
+    #search-layer { flex: 0 0 auto; padding: 6px 12px 0; }
+    #search-input { width: 100%; min-height: 44px; font: 700 18px/1.2 "Trebuchet MS", "Segoe UI", sans-serif; border-radius: 22px; padding: 8px 14px; }
+    main { flex: 1 1 auto; overflow: auto; padding: 8px 10px 10px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 10px; }
+    .card, .field, .choice { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; text-align: left; border-radius: 28px; padding: 12px 14px; min-height: 72px; font: inherit; }
+    .card-title, .choice, .group-label { font-size: 18px; font-weight: 700; }
+    .group-label { margin: 8px 4px 0; }
+    .card-meta, #cover-note, #rescan-note { font-size: 13px; font-weight: 700; }
+    img.cover { width: 72px; height: 96px; object-fit: cover; border-radius: 18px; background: rgba(0, 0, 0, 0.12); }
+    #game-summary { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.35; }
+    #find-bar { flex: 1 1 auto; display: flex; flex-direction: row; flex-wrap: nowrap; gap: 6px; padding: 0; min-width: 0; }
+    #find-bar .find { flex: 1 1 0; flex-direction: row; align-items: center; gap: 6px; min-width: 0; min-height: 40px; padding: 2px 8px; font-size: 13px; overflow: hidden; }
+    #find-bar .find input { width: auto; flex: 1 1 auto; min-width: 0; min-height: 32px; }
+    .tabs { display: flex; gap: 6px; margin: 0; flex: 0 0 auto; }
+    #library-tabs .choice { flex: 0 0 auto; width: auto; min-height: 40px; padding: 4px 10px; }
+    .card-head { display: flex; flex-direction: row; align-items: center; gap: 8px; width: 100%; min-width: 0; }
+    .card-head .card-title { min-width: 0; }
+    img.platform-logo { width: 36px; height: 36px; object-fit: contain; flex: 0 0 auto; background: transparent; }
+    .game-split { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; }
+    .game-main { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+    #shot-preview { flex: 0 0 200px; width: 200px; max-width: 42%; height: 124px; min-height: 124px; padding: 8px; overflow: hidden; }
+    #shot-preview img, #shot-carousel img { width: 100%; height: 100%; object-fit: contain; border-radius: 16px; background: rgba(0, 0, 0, 0.12); }
+    #shot-carousel {
+      position: fixed; z-index: 4; left: 8px; right: 8px; top: 8px; bottom: 8px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px;
+    }
+    #shot-carousel img { flex: 1 1 auto; min-height: 0; }
+    #shot-count { margin: 0; font-size: 14px; }
+    .stack { display: flex; flex-direction: column; gap: 10px; max-width: 560px; }
+    label.field { min-height: 64px; }
+    input[type="text"], input[type="password"], input[type="url"] { width: 100%; min-height: 40px; font: 700 16px/1.2 "Trebuchet MS", "Segoe UI", sans-serif; border-radius: 16px; padding: 6px 10px; }
+    .is-focused { outline: 4px solid var(--ring); outline-offset: 2px; }
+    .is-selected { border-color: var(--ring); }
+    #bar { flex: 0 0 auto; display: flex; gap: 8px; padding: 8px; }
+    #bar button { flex: 1 1 0; min-width: 56px; min-height: 56px; font: 700 16px/1.1 "Trebuchet MS", "Segoe UI", sans-serif; border-radius: 28px; }
+    [hidden] { display: none !important; }
+    html[data-theme="bright"] {
+      --sky-top: #8fd4ff; --sky-bottom: #f7fbff; --ink: #14365c; --muted: #3d6288;
+      --card: #ffffff; --card-edge: #ffffff; --shadow: rgba(20, 80, 140, 0.18);
+      --field: #f4f9ff; --field-edge: #9ec8ea; --bar: rgba(255, 255, 255, 0.88);
+      --bar-btn: #ffffff; --bar-edge: #d5ebf8; --cloud: rgba(255, 255, 255, 0.95);
+      --ring: #07284a; --progress: #0b4f86; --boot: #14365c;
+    }
+    html[data-theme="dark"] {
+      --sky-top: #12325f; --sky-bottom: #071428; --ink: #f4f8ff; --muted: #c5d7ee;
+      --card: #1b4f8a; --card-edge: #8eb6e8; --shadow: rgba(0, 0, 0, 0.35);
+      --field: #0d2244; --field-edge: #7ea6d4; --bar: rgba(8, 22, 48, 0.92);
+      --bar-btn: #245a9a; --bar-edge: #9ec0ea; --cloud: rgba(198, 220, 255, 0.55);
+      --ring: #ffe14a; --progress: #ffe14a; --boot: #f4f8ff;
+    }
+    body { background: linear-gradient(180deg, var(--sky-top), var(--sky-bottom)); color: var(--ink); }
+    #boot-fallback, #noscript-fallback { color: var(--boot); }
+    #subtitle, #status, .card-meta, #cover-note, #rescan-note, #connect-hint { color: var(--muted); }
+    #download-progress { color: var(--progress); }
+    #search-input, input[type="text"], input[type="password"], input[type="url"] {
+      background: var(--field); color: var(--ink); border: 3px solid var(--field-edge);
+    }
+    .card, .field, .choice {
+      background: var(--card); color: var(--ink); border: 3px solid var(--card-edge);
+      box-shadow: 0 6px 0 var(--shadow);
+    }
+    #bar { background: var(--bar); }
+    #bar button { background: var(--bar-btn); color: var(--ink); border: 3px solid var(--bar-edge); box-shadow: 0 4px 0 var(--shadow); }
+    @media (max-height: 420px) {
+      header { gap: 6px; padding-top: 2px; }
+      header h1 { font-size: 15px; max-width: 30%; }
+      #subtitle { display: none; }
+      #connect-hint { font-size: 13px; margin: 0; }
+      .cloud.c3 { display: none; }
+      .cloud.c1, .cloud.c2 { transform: scale(0.55); transform-origin: top left; }
+      #game-summary { font-size: 13px; max-height: 4.5em; overflow: auto; }
+      #find-bar { gap: 4px; }
+      #find-bar .find, #library-tabs .choice { min-height: 36px; }
+      #find-bar .find input { min-height: 28px; font-size: 14px; }
+      img.platform-logo { width: 28px; height: 28px; }
+      .game-split { gap: 6px; }
+      #shot-preview { flex-basis: 132px; width: 132px; max-width: 42%; height: 84px; min-height: 84px; padding: 4px; }
+      .card, .choice { min-height: 56px; padding: 8px 10px; border-radius: 22px; }
+      .card-title, .choice { font-size: 15px; }
+      img.cover { width: 40px; height: 54px; border-radius: 12px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 6px; }
+      main { padding: 4px 8px 6px; }
+      #bar { padding: 4px; gap: 4px; }
+      #bar button { min-height: 56px; font-size: 14px; }
+    }
+    @media (min-width: 900px) and (min-height: 700px) {
+      header h1 { font-size: 28px; }
+      .grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 14px; }
+      .card, .choice { min-height: 88px; border-radius: 32px; }
+      img.cover { width: 84px; height: 112px; }
+      #shot-preview { flex-basis: 280px; width: 280px; height: 168px; min-height: 168px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="boot-fallback">Starting Cocoon RomM Shelf…</div>
+  <div id="app" hidden>
+    <div class="sky" aria-hidden="true">
+      <svg class="cloud c1" viewBox="-20 -24 300 120" aria-hidden="true">
+        <defs><filter id="cloud-soft-1" x="-20%" y="-40%" width="140%" height="180%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>
+        <path filter="url(#cloud-soft-1)" d="M28 78C18 62 36 48 58 54C62 28 98 22 118 42C126 18 168 16 188 40C214 22 268 36 258 62C276 70 262 92 228 88C180 102 90 98 28 78Z"/>
+      </svg>
+      <svg class="cloud c2" viewBox="-16 -28 240 150" aria-hidden="true">
+        <defs><filter id="cloud-soft-2" x="-20%" y="-30%" width="150%" height="170%"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+        <path filter="url(#cloud-soft-2)" d="M46 108C20 92 16 58 42 50C36 22 78 8 104 32C118 6 168 14 176 46C210 28 236 58 214 84C228 112 176 128 132 112C96 126 64 122 46 108Z"/>
+      </svg>
+      <svg class="cloud c3" viewBox="-12 -16 180 100" aria-hidden="true">
+        <defs><filter id="cloud-soft-3" x="-25%" y="-35%" width="150%" height="170%"><feGaussianBlur stdDeviation="2"/></filter></defs>
+        <path filter="url(#cloud-soft-3)" d="M24 62C10 50 18 28 40 30C46 10 86 12 92 34C118 18 156 36 142 56C154 70 132 86 104 78C70 90 36 78 24 62Z"/>
+      </svg>
+    </div>
+    <header id="top-row">
+      <h1 id="title">Cocoon RomM Shelf</h1>
+      <div id="library-tabs" class="tabs" hidden>
+        <button type="button" id="tab-consoles" data-focus="1" data-zone="tab" data-focus-id="tab-consoles" class="choice is-selected">Consoles</button>
+        <button type="button" id="tab-collections" data-focus="1" data-zone="tab" data-focus-id="tab-collections" class="choice">Collections</button>
+      </div>
+      <div id="find-bar" hidden>
+        <label id="console-filter-label" class="find field">Consoles<input id="console-filter" data-focus="1" data-zone="chrome" data-focus-id="console-filter" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Filter consoles"></label>
+        <label id="game-search-label" class="find field" hidden>This console<input id="game-search" data-focus="1" data-zone="chrome" data-focus-id="game-search" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search this console, then confirm"></label>
+        <label id="library-search-label" class="find field">All consoles<input id="library-search" data-focus="1" data-zone="chrome" data-focus-id="library-search" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Search all consoles, then confirm"></label>
+      </div>
+    </header>
+    <div id="notes">
+      <p id="subtitle"></p>
+      <p id="status"></p>
+      <p id="download-progress"></p>
+    </div>
+    <main>
+      <section id="screen-connect" class="stack">
+        <label class="field">Server URL<input id="server-url" data-focus="1" data-zone="page" data-focus-id="server-url" type="url" autocomplete="off" placeholder="http://romm.local:8080"></label>
+        <label class="field">Username<input id="username" data-focus="1" data-zone="page" data-focus-id="username" type="text" autocomplete="username"></label>
+        <label class="field">Secret<input id="secret" data-focus="1" data-zone="page" data-focus-id="secret" type="password" autocomplete="off" spellcheck="false"></label>
+        <p id="connect-hint">Password, an rmm_ token, or an 8-digit code.</p>
+        <button type="button" id="btn-sign-in" data-focus="1" data-zone="page" data-focus-id="btn-sign-in" class="choice">Sign in</button>
+      </section>
+      <section id="screen-platforms" hidden>
+        <div id="platform-grid" class="grid"></div>
+        <div id="collection-grid" class="grid" hidden></div>
+      </section>
+      <section id="screen-games" hidden>
+        <div id="game-grid" class="grid"></div>
+      </section>
+      <section id="screen-game" hidden>
+        <div class="game-split">
+          <div class="game-main">
+            <div id="game-card" data-focus="1" data-zone="page" data-focus-id="game-card" class="card">
+              <img id="game-cover" class="cover" alt="" width="72" height="96" hidden>
+              <span id="game-title" class="card-title"></span>
+              <span id="game-file" class="card-meta"></span>
+              <span id="game-dest" class="card-meta"></span>
+              <p id="game-summary" hidden></p>
+            </div>
+            <button type="button" id="btn-scrape" data-focus="1" data-zone="page" data-focus-id="btn-scrape" class="choice">Scrape art</button>
+            <p id="cover-note" hidden></p>
+            <p id="rescan-note" hidden></p>
+          </div>
+          <button type="button" id="shot-preview" data-focus="1" data-zone="preview" data-focus-id="shot-preview" class="card" hidden aria-label="Screenshots">
+            <img id="shot-preview-img" alt="" width="200" height="124">
+          </button>
+        </div>
+        <div id="shot-carousel" data-focus="1" data-zone="carousel" data-focus-id="shot-carousel" class="card" hidden>
+          <img id="shot-carousel-img" alt="">
+          <p id="shot-count"></p>
+        </div>
+      </section>
+      <section id="screen-settings" class="stack" hidden>
+        <button type="button" id="btn-rom-root" data-focus="1" data-zone="page" data-focus-id="btn-rom-root" class="choice">ROM root <span id="rom-root-label">No folder chosen</span></button>
+        <button type="button" id="btn-layout-cocoon" data-focus="1" data-zone="page" data-focus-id="btn-layout-cocoon" class="choice">Cocoon folders</button>
+        <button type="button" id="btn-layout-romm" data-focus="1" data-zone="page" data-focus-id="btn-layout-romm" class="choice">RomM slugs</button>
+        <button type="button" id="btn-layout-alias" data-focus="1" data-zone="page" data-focus-id="btn-layout-alias" class="choice">Match existing folder</button>
+        <p class="group-label">Brightness</p>
+        <button type="button" id="btn-theme-bright" data-focus="1" data-zone="page" data-focus-id="btn-theme-bright" class="choice">Bright</button>
+        <button type="button" id="btn-theme-dark" data-focus="1" data-zone="page" data-focus-id="btn-theme-dark" class="choice">Dark</button>
+        <p class="group-label">Artwork accounts</p>
+        <label class="field">ScreenScraper user<input id="ss-user" data-focus="1" data-zone="page" data-focus-id="ss-user" type="text" autocomplete="off"></label>
+        <label class="field">ScreenScraper password<input id="ss-password" data-focus="1" data-zone="page" data-focus-id="ss-password" type="password" autocomplete="off"></label>
+        <label class="field">ScreenScraper devid<input id="ss-devid" data-focus="1" data-zone="page" data-focus-id="ss-devid" type="text" autocomplete="off"></label>
+        <label class="field">ScreenScraper dev password<input id="ss-devpassword" data-focus="1" data-zone="page" data-focus-id="ss-devpassword" type="password" autocomplete="off"></label>
+        <label class="field">SteamGridDB API key<input id="sgdb-key" data-focus="1" data-zone="page" data-focus-id="sgdb-key" type="password" autocomplete="off"></label>
+        <button type="button" id="btn-save-scraper" data-focus="1" data-zone="page" data-focus-id="btn-save-scraper" class="choice">Save artwork accounts</button>
+        <button type="button" id="btn-clear-scraper" data-focus="1" data-zone="page" data-focus-id="btn-clear-scraper" class="choice">Clear artwork accounts</button>
+        <button type="button" id="btn-logout" data-focus="1" data-zone="page" data-focus-id="btn-logout" class="choice">Log out</button>
+      </section>
+    </main>
+    <nav id="bar">
+      <button type="button" id="btn-download" data-focus="1" data-zone="footer" data-focus-id="btn-download" hidden>Download</button>
+      <button type="button" id="btn-settings" data-focus="1" data-zone="footer" data-focus-id="btn-settings">Settings</button>
+    </nav>
+  </div>
+  <noscript><p id="noscript-fallback">JavaScript is required for Cocoon RomM Shelf.</p></noscript>
+</body>
+</html>
