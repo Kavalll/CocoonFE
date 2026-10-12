@@ -31,14 +31,26 @@ class OneFichierResolver(private val pages: PageFetcher) {
         if (first.isFile) return directFile(first.finalUrl.ifBlank { uri }, uri)
         HtmlShare.subdomainFile(first.body, "1fichier.com")?.let { return directFile(it, uri) }
         val form = HtmlShare.downloadForm(first.body, first.finalUrl.ifBlank { uri })
-            ?: throw MirrorException("1fichier did not offer a file")
+            ?: throw AttemptException(
+                phase = DownloadPhases.CONNECTING,
+                httpStatus = first.code,
+                message = "1fichier did not offer a file",
+            )
         val second = pages.postForm(form.action, form.fields, browserHeaders(uri))
         if (second.isFile) return directFile(second.finalUrl.ifBlank { uri }, uri)
         HtmlShare.subdomainFile(second.body, "1fichier.com")?.let { return directFile(it, uri) }
         if ("wait" in second.body.lowercase()) {
-            throw MirrorException("1fichier asked us to wait, so this mirror was skipped")
+            throw AttemptException(
+                phase = DownloadPhases.CONNECTING,
+                httpStatus = second.code,
+                message = "1fichier asked us to wait, so this mirror was skipped",
+            )
         }
-        throw MirrorException("1fichier did not return a direct file")
+        throw AttemptException(
+            phase = DownloadPhases.CONNECTING,
+            httpStatus = second.code,
+            message = "1fichier did not return a direct file",
+        )
     }
 }
 
@@ -54,9 +66,17 @@ class VikingFileResolver(private val pages: PageFetcher) {
         if (embedded != null) return directFile(embedded, uri)
         val lower = page.body.lowercase()
         if ("turnstile" in lower || "captcha-download" in lower) {
-            throw MirrorException("VikingFile asked for an interactive check, so this mirror was skipped")
+            throw AttemptException(
+                phase = DownloadPhases.CONNECTING,
+                httpStatus = page.code,
+                message = "VikingFile asked for an interactive check, so this mirror was skipped",
+            )
         }
-        throw MirrorException("VikingFile did not return a direct file")
+        throw AttemptException(
+            phase = DownloadPhases.CONNECTING,
+            httpStatus = page.code,
+            message = "VikingFile did not return a direct file",
+        )
     }
 
     private fun jsonLink(body: String): String? {
@@ -70,13 +90,19 @@ class DataNodesResolver(private val pages: PageFetcher) {
         val first = pages.get(uri, browserHeaders(uri))
         if (first.isFile) return directFile(first.finalUrl.ifBlank { uri }, uri)
         directCandidate(first.body, uri)?.let { return directFile(it, uri) }
+        var lastCode = first.code
         val form = HtmlShare.downloadForm(first.body, first.finalUrl.ifBlank { uri })
         if (form != null) {
             val second = pages.postForm(form.action, form.fields, browserHeaders(uri))
+            lastCode = second.code
             if (second.isFile) return directFile(second.finalUrl.ifBlank { uri }, uri)
             directCandidate(second.body, uri)?.let { return directFile(it, uri) }
         }
-        throw MirrorException("DataNodes did not return a direct file")
+        throw AttemptException(
+            phase = DownloadPhases.CONNECTING,
+            httpStatus = lastCode,
+            message = "DataNodes did not return a direct file",
+        )
     }
 
     private fun directCandidate(html: String, pageUri: String): String? {

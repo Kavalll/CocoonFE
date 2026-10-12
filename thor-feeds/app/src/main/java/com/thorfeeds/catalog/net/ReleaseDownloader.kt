@@ -12,39 +12,55 @@ class ReleaseDownloader(
 ) {
     suspend fun download(uris: List<String>, sink: ByteSink, listener: DownloadListener) {
         val links = uris.map { it.trim() }.filter { it.isNotEmpty() }
-        if (links.isEmpty()) throw MirrorException("This release has no download links")
-        var lastMessage = "All mirrors failed"
+        if (links.isEmpty()) {
+            throw AttemptException(
+                phase = DownloadPhases.CONNECTING,
+                message = "This release has no download links",
+            )
+        }
+        val failures = mutableListOf<String>()
         for ((index, uri) in links.withIndex()) {
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            if (TransferControl.isCancelled()) throw CancellationException("Download cancelled")
             val label = UriHosts.label(uri)
+            TransferControl.phase = DownloadPhases.CONNECTING
             listener.onMirrorStarting(index, links.size, label)
             try {
                 val resolved = withContext(Dispatchers.IO) { router.resolve(uri) }
-                if (resolved.files.isEmpty()) throw MirrorException("$label did not include a file")
+                if (resolved.files.isEmpty()) {
+                    throw AttemptException(
+                        phase = DownloadPhases.CONTENTS,
+                        message = "$label did not include a file link, so this mirror was skipped.",
+                    )
+                }
                 for (file in resolved.files) {
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    if (TransferControl.isCancelled()) throw CancellationException("Download cancelled")
+                    TransferControl.phase = DownloadPhases.CONNECTING
                     fetcher.fetch(file, sink) { read, total ->
                         listener.onProgress(file.fileName, read, total)
                     }
                 }
                 return
             } catch (cancelled: CancellationException) {
-                throw cancelled
+                val report = AttemptReport.format(
+                    host = label,
+                    mirrorIndex = index,
+                    mirrorCount = links.size,
+                    phase = TransferControl.phase.ifBlank { DownloadPhases.CONNECTING },
+                    httpStatus = null,
+                    apiStatus = "cancel",
+                    detail = "Download cancelled.",
+                )
+                val text = AttemptReport.join(failures + report)
+                listener.onMirrorFailed(index, text)
+                throw CancellationException(text)
             } catch (error: Exception) {
-                lastMessage = publicMirrorError(label, error)
-                listener.onMirrorFailed(index, lastMessage)
+                val report = AttemptReport.fromThrowable(label, index, links.size, error)
+                failures += report
+                listener.onMirrorFailed(index, AttemptReport.join(failures))
             }
         }
-        throw MirrorException(lastMessage)
+        throw MirrorException(AttemptReport.join(failures).ifBlank { "All mirrors failed" })
     }
-
-}
-
-fun publicMirrorError(label: String, error: Throwable): String {
-    val raw = error.message.orEmpty()
-        .replace(Regex("""https?://\S+"""), "a link")
-        .replace(Regex("""\s+"""), " ")
-        .trim()
-    val clipped = raw.take(180)
-    return if (clipped.isBlank()) "$label failed" else "$label: $clipped"
 }

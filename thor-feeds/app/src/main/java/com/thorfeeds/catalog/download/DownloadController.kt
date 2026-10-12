@@ -7,9 +7,11 @@ import com.thorfeeds.catalog.core.Names
 import com.thorfeeds.catalog.data.LibraryRepository
 import com.thorfeeds.catalog.data.SafByteSink
 import com.thorfeeds.catalog.data.toParsed
+import com.thorfeeds.catalog.net.AttemptReport
 import com.thorfeeds.catalog.net.DownloadListener
+import com.thorfeeds.catalog.net.DownloadPhases
 import com.thorfeeds.catalog.net.ReleaseDownloader
-import com.thorfeeds.catalog.net.publicMirrorError
+import com.thorfeeds.catalog.net.TransferControl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -56,18 +58,22 @@ class DownloadController(
     fun start(releaseId: String) {
         synchronized(this) {
             if (job?.isActive == true) return
+            TransferControl.reset()
             job = scope.launch { run(releaseId) }
         }
     }
 
     fun cancel() {
-        job?.cancel()
+        synchronized(this) {
+            TransferControl.cancel()
+            job?.cancel()
+        }
     }
 
     private suspend fun run(releaseId: String) {
         val entity = library.readRelease(releaseId)
         if (entity == null) {
-            snapshot.value = failed(releaseId, "Game", "That release is no longer in the catalog.")
+            snapshot.value = failed(releaseId, "Game", DownloadPhases.CONNECTING, "That release is no longer in the catalog.")
             return
         }
         val parsed = entity.toParsed()
@@ -85,14 +91,17 @@ class DownloadController(
         )
         val folder = library.currentFolder()
         if (folder.isNullOrBlank()) {
-            snapshot.value = base.copy(phase = DownloadPhase.Failed, message = "Choose a games folder first.")
+            snapshot.value = base.copy(
+                phase = DownloadPhase.Failed,
+                message = detail(base, DownloadPhases.WRITING, "Choose a games folder first."),
+            )
             return
         }
         val tree = DocumentFile.fromTreeUri(context, Uri.parse(folder))
         if (tree == null || !tree.canWrite()) {
             snapshot.value = base.copy(
                 phase = DownloadPhase.Failed,
-                message = "The games folder permission expired. Choose it again.",
+                message = detail(base, DownloadPhases.WRITING, "The games folder permission expired. Choose it again."),
             )
             return
         }
@@ -100,7 +109,10 @@ class DownloadController(
         val gameDir = tree.listFiles().firstOrNull { it.isDirectory && it.name.equals(directoryName, ignoreCase = true) }
             ?: tree.createDirectory(directoryName)
         if (gameDir == null) {
-            snapshot.value = base.copy(phase = DownloadPhase.Failed, message = "Couldn't create a folder for this game.")
+            snapshot.value = base.copy(
+                phase = DownloadPhase.Failed,
+                message = detail(base, DownloadPhases.WRITING, "Couldn't create a folder for this game."),
+            )
             return
         }
         snapshot.value = base
@@ -108,14 +120,15 @@ class DownloadController(
         try {
             downloader.download(parsed.uris, sink, object : DownloadListener {
                 override fun onMirrorStarting(index: Int, count: Int, label: String) {
-                    snapshot.value = (snapshot.value ?: base).copy(
+                    val current = snapshot.value ?: base
+                    snapshot.value = current.copy(
                         phase = DownloadPhase.Connecting,
                         mirrorIndex = index,
                         mirrorCount = count,
                         mirrorLabel = label,
                         bytesRead = 0L,
                         totalBytes = null,
-                        message = null,
+                        fileName = null,
                     )
                 }
 
@@ -134,36 +147,87 @@ class DownloadController(
                     )
                 }
             })
-            snapshot.value = (snapshot.value ?: base).copy(
+            val current = snapshot.value ?: base
+            val saved = "Saved in $directoryName"
+            val previous = current.message?.takeIf { it.contains("Phase:") }
+            snapshot.value = current.copy(
                 phase = DownloadPhase.Completed,
-                message = "Saved in $directoryName",
+                message = if (previous.isNullOrBlank()) saved else "$previous\n\n$saved",
             )
             library.rescan()
         } catch (cancelled: CancellationException) {
-            snapshot.value = (snapshot.value ?: base).copy(
+            val current = snapshot.value ?: base
+            snapshot.value = current.copy(
                 phase = DownloadPhase.Cancelled,
-                message = "Download cancelled",
+                message = cancelDetail(current),
             )
         } catch (error: Exception) {
-            snapshot.value = (snapshot.value ?: base).copy(
+            val current = snapshot.value ?: base
+            snapshot.value = current.copy(
                 phase = DownloadPhase.Failed,
-                message = publicMirrorError("Download", error),
+                message = failureDetail(current, error),
             )
         }
     }
 
-    private fun failed(releaseId: String, title: String, message: String): DownloadSnapshot {
+    private fun detail(base: DownloadSnapshot, phase: String, text: String): String {
+        return AttemptReport.format(
+            host = base.mirrorLabel.takeUnless { it.isBlank() || it == "…" } ?: "Thor Feeds",
+            mirrorIndex = base.mirrorIndex,
+            mirrorCount = base.mirrorCount,
+            phase = phase,
+            httpStatus = null,
+            apiStatus = null,
+            detail = text,
+        )
+    }
+
+    private fun cancelDetail(current: DownloadSnapshot): String {
+        if (current.message?.contains("Status: cancel") == true) return current.message
+        val report = AttemptReport.format(
+            host = current.mirrorLabel.ifBlank { "download" },
+            mirrorIndex = current.mirrorIndex,
+            mirrorCount = current.mirrorCount,
+            phase = TransferControl.phase.ifBlank { DownloadPhases.CONNECTING },
+            httpStatus = null,
+            apiStatus = "cancel",
+            detail = "Download cancelled.",
+        )
+        val previous = current.message?.takeIf { it.contains("Phase:") }
+        return if (previous.isNullOrBlank()) report else "$previous\n\n$report"
+    }
+
+    private fun failureDetail(current: DownloadSnapshot, error: Exception): String {
+        current.message?.takeIf { it.contains("Phase:") }?.let { return it }
+        error.message?.takeIf { it.contains("Phase:") }?.let { return it }
+        return AttemptReport.fromThrowable(
+            host = current.mirrorLabel.ifBlank { "download" },
+            mirrorIndex = current.mirrorIndex,
+            mirrorCount = current.mirrorCount,
+            error = error,
+        )
+    }
+
+    private fun failed(releaseId: String, title: String, phase: String, detail: String): DownloadSnapshot {
         return DownloadSnapshot(
             releaseId = releaseId,
             canonicalTitle = title,
             phase = DownloadPhase.Failed,
             mirrorIndex = 0,
-            mirrorCount = 0,
-            mirrorLabel = "",
+            mirrorCount = 1,
+            mirrorLabel = "Thor Feeds",
             bytesRead = 0L,
             totalBytes = null,
             fileName = null,
-            message = message,
+            message = AttemptReport.format(
+                host = "Thor Feeds",
+                mirrorIndex = 0,
+                mirrorCount = 1,
+                phase = phase,
+                httpStatus = null,
+                apiStatus = null,
+                detail = detail,
+            ),
         )
     }
 }

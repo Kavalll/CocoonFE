@@ -104,7 +104,7 @@ class DownloadService : Service() {
         val text = when (state.phase) {
             DownloadPhase.Completed -> state.message ?: "Download complete"
             DownloadPhase.Failed -> state.message ?: "Download failed"
-            DownloadPhase.Cancelled -> "Download cancelled"
+            DownloadPhase.Cancelled -> state.message ?: "Download cancelled"
             else -> {
                 val mirror = "Mirror ${state.mirrorIndex + 1} of ${state.mirrorCount} · ${state.mirrorLabel}"
                 val amount = if (state.totalBytes != null && state.totalBytes > 0) {
@@ -131,7 +131,8 @@ class DownloadService : Service() {
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle(state.canonicalTitle)
-            .setContentText(text)
+            .setContentText(text.lineSequence().firstOrNull().orEmpty())
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOnlyAlertOnce(true)
             .setOngoing(!state.terminal)
         if (!state.terminal) {

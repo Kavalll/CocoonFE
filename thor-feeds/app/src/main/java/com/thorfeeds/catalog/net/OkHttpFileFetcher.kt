@@ -27,10 +27,11 @@ class OkHttpFileFetcher(private val client: OkHttpClient) : FileFetcher {
         allowRange: Boolean,
     ): String {
         val job = kotlin.coroutines.coroutineContext[Job]
-        val existing = if (allowRange) {
-            sink.existing(partialName(file.fileName), file.sourceKey)
-        } else {
-            ExistingPartial(0, false)
+        TransferControl.phase = DownloadPhases.CONNECTING
+        val existing = try {
+            if (allowRange) sink.existing(partialName(file.fileName), file.sourceKey) else ExistingPartial(0, false)
+        } catch (error: Exception) {
+            throw writingFailure(error)
         }
         val range = if (allowRange) DownloadPlan.rangeHeader(existing.bytes, existing.acceptsRange) else null
         val requestBuilder = Request.Builder()
@@ -43,84 +44,170 @@ class OkHttpFileFetcher(private val client: OkHttpClient) : FileFetcher {
             if (cause is CancellationException) call.cancel()
         }
         try {
-            call.execute().use { response ->
-                if (response.code == 416 && range != null) {
-                    return download(file, sink, onProgress, allowRange = false)
+            return TransferControl.use(call) {
+                call.execute().use { response ->
+                    readBody(file, sink, onProgress, allowRange, existing, range, response, job)
                 }
-                if (response.code != 200 && response.code != 206) {
-                    throw MirrorException("Download failed (${response.code})")
-                }
-                val appending = response.code == 206 && range != null
-                val headerName = fileNameFromContentDisposition(response.header("Content-Disposition"))
-                val fileName = if (!appending && !headerName.isNullOrBlank()) {
-                    Names.sanitizeFile(headerName)
-                } else {
-                    file.fileName
-                }
-                val partial = partialName(fileName)
-                val acceptsRange = response.code == 206 ||
-                    response.header("Accept-Ranges")?.contains("bytes", ignoreCase = true) == true
-                val total = DownloadPlan.totalBytes(
-                    sentRange = appending,
-                    existing = if (appending) existing.bytes else 0L,
-                    contentLength = response.body?.contentLength() ?: -1L,
-                    contentRange = response.header("Content-Range"),
-                )
-                sink.writeMeta(partial, file.sourceKey, acceptsRange)
-                val output = sink.open(partial, append = appending)
-                var finished = false
-                var reject: MirrorException? = null
-                try {
-                    val source = response.body?.byteStream() ?: throw MirrorException("Empty download")
-                    val buffer = ByteArray(256 * 1024)
-                    var readTotal = if (appending) existing.bytes else 0L
-                    var checkedPrefix = false
-                    var lastEmit = 0L
-                    while (true) {
-                        if (job?.isActive == false) throw CancellationException("Download cancelled")
-                        val count = source.read(buffer)
-                        if (count < 0) break
-                        if (!checkedPrefix) {
-                            checkedPrefix = true
-                            if (DownloadPlan.looksLikeHtmlPrefix(buffer, count)) {
-                                reject = MirrorException("Host returned a web page instead of a file")
-                                break
-                            }
-                        }
-                        output.write(buffer, 0, count)
-                        readTotal += count
-                        val now = System.currentTimeMillis()
-                        if (now - lastEmit > 200) {
-                            lastEmit = now
-                            onProgress(readTotal, total)
-                        }
-                    }
-                    output.flush()
-                    finished = reject == null
-                    if (finished) onProgress(readTotal, total ?: readTotal)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } finally {
-                    output.close()
-                }
-                if (reject != null) {
-                    sink.discard(partial)
-                    throw reject
-                }
-                if (finished) sink.commit(partial)
-                return fileName
             }
+        } catch (_: RangeRejected) {
+            call.cancel()
+            return download(file, sink, onProgress, allowRange = false)
         } catch (cancelled: CancellationException) {
             call.cancel()
             throw cancelled
+        } catch (attempt: AttemptException) {
+            call.cancel()
+            throw attempt
         } catch (io: IOException) {
             call.cancel()
-            if (job?.isActive == false) {
+            if (job?.isActive == false || TransferControl.isCancelled()) {
                 throw CancellationException("Download cancelled")
             }
-            throw MirrorException("The connection dropped")
+            throw io.asAttempt(TransferControl.phase)
         }
     }
+
+    private fun readBody(
+        file: RemoteFile,
+        sink: ByteSink,
+        onProgress: (bytesRead: Long, totalBytes: Long?) -> Unit,
+        allowRange: Boolean,
+        existing: ExistingPartial,
+        range: String?,
+        response: okhttp3.Response,
+        job: Job?,
+    ): String {
+        if (response.code == 416 && range != null) {
+            throw RangeRejected()
+        }
+        if (response.code != 200 && response.code != 206) {
+            throw AttemptException(
+                phase = DownloadPhases.CONNECTING,
+                httpStatus = response.code,
+                message = "The host refused the file (${response.code}).",
+            )
+        }
+        val appending = response.code == 206 && range != null
+        val headerName = fileNameFromContentDisposition(response.header("Content-Disposition"))
+        val fileName = if (!appending && !headerName.isNullOrBlank()) {
+            Names.sanitizeFile(headerName)
+        } else {
+            file.fileName
+        }
+        val partial = partialName(fileName)
+        val acceptsRange = response.code == 206 ||
+            response.header("Accept-Ranges")?.contains("bytes", ignoreCase = true) == true
+        val total = DownloadPlan.totalBytes(
+            sentRange = appending,
+            existing = if (appending) existing.bytes else 0L,
+            contentLength = response.body?.contentLength() ?: -1L,
+            contentRange = response.header("Content-Range"),
+        )
+        try {
+            sink.writeMeta(partial, file.sourceKey, acceptsRange)
+        } catch (error: Exception) {
+            throw writingFailure(error)
+        }
+        val output = try {
+            sink.open(partial, append = appending)
+        } catch (error: Exception) {
+            throw writingFailure(error)
+        }
+        TransferControl.phase = DownloadPhases.TRANSFERRING
+        var finished = false
+        var reject: AttemptException? = null
+        try {
+            val source = response.body?.byteStream() ?: throw AttemptException(
+                phase = DownloadPhases.CONNECTING,
+                httpStatus = response.code,
+                message = "The host returned an empty file.",
+            )
+            val buffer = ByteArray(256 * 1024)
+            var readTotal = if (appending) existing.bytes else 0L
+            var checkedPrefix = false
+            var lastEmit = 0L
+            while (true) {
+                if (job?.isActive == false || TransferControl.isCancelled()) {
+                    throw CancellationException("Download cancelled")
+                }
+                val count = try {
+                    source.read(buffer)
+                } catch (io: IOException) {
+                    if (TransferControl.isCancelled()) throw CancellationException("Download cancelled")
+                    throw io.asAttempt(DownloadPhases.TRANSFERRING)
+                }
+                if (count < 0) break
+                if (!checkedPrefix) {
+                    checkedPrefix = true
+                    if (DownloadPlan.looksLikeHtmlPrefix(buffer, count)) {
+                        reject = AttemptException(
+                            phase = DownloadPhases.TRANSFERRING,
+                            httpStatus = response.code,
+                            message = "Host returned a web page instead of a file",
+                        )
+                        break
+                    }
+                }
+                TransferControl.phase = DownloadPhases.WRITING
+                try {
+                    output.write(buffer, 0, count)
+                } catch (error: Exception) {
+                    throw writingFailure(error)
+                }
+                TransferControl.phase = DownloadPhases.TRANSFERRING
+                readTotal += count
+                val now = System.currentTimeMillis()
+                if (now - lastEmit > 200) {
+                    lastEmit = now
+                    onProgress(readTotal, total)
+                }
+            }
+            try {
+                output.flush()
+            } catch (error: Exception) {
+                throw writingFailure(error)
+            }
+            finished = reject == null
+            if (finished) onProgress(readTotal, total ?: readTotal)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (attempt: AttemptException) {
+            throw attempt
+        } finally {
+            try {
+                output.close()
+            } catch (error: Exception) {
+                if (reject == null && finished) throw writingFailure(error)
+            }
+        }
+        if (reject != null) {
+            try {
+                sink.discard(partial)
+            } catch (_: Exception) {
+                // The failure that matters is the rejected body.
+            }
+            throw reject
+        }
+        if (finished) {
+            try {
+                sink.commit(partial)
+            } catch (error: Exception) {
+                throw writingFailure(error)
+            }
+        }
+        return fileName
+    }
+
+    private fun writingFailure(error: Exception): AttemptException {
+        if (error is CancellationException) throw error
+        if (error is AttemptException) return error
+        return AttemptException(
+            phase = DownloadPhases.WRITING,
+            message = error.message?.ifBlank { null } ?: "Couldn't write the download file.",
+        )
+    }
+
+    private class RangeRejected : Exception()
 
     companion object {
         fun partialName(fileName: String): String = "$fileName.partial"

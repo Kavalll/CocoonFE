@@ -1,6 +1,6 @@
 package com.thorfeeds.catalog.net
 
-class MirrorException(message: String) : Exception(message)
+open class MirrorException(message: String) : Exception(message)
 
 data class RemoteFile(
     val url: String,

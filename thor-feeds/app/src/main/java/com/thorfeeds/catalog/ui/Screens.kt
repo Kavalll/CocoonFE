@@ -1,5 +1,8 @@
 package com.thorfeeds.catalog.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -56,6 +60,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -329,13 +334,15 @@ private fun ReleaseCard(
                     LinearProgressIndicator(progress = { fraction }, modifier = Modifier.fillMaxWidth())
                 }
                 Text(progressLabel(download))
-                download.message?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                download.message?.let { message ->
+                    FailureText(message, emphasize = message.contains("Phase:"))
+                }
                 OutlinedButton(onClick = onCancel) { Text("Cancel") }
             } else {
                 download?.message?.let { message ->
-                    Text(
+                    FailureText(
                         message,
-                        color = if (download.phase == DownloadPhase.Failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        emphasize = download.phase == DownloadPhase.Failed || download.phase == DownloadPhase.Cancelled,
                     )
                 }
                 when {
@@ -539,6 +546,24 @@ private fun Badge(text: String) {
             color = MaterialTheme.colorScheme.onPrimary,
             style = MaterialTheme.typography.labelLarge,
         )
+    }
+}
+
+@Composable
+private fun FailureText(text: String, emphasize: Boolean) {
+    val context = LocalContext.current
+    SelectionContainer {
+        Text(
+            text,
+            color = if (emphasize) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+    TextButton(onClick = {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("Thor Feeds download", text))
+    }) {
+        Text("Copy details")
     }
 }
 
