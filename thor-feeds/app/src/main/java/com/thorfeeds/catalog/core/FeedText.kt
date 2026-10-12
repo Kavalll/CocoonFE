@@ -33,18 +33,27 @@ object FeedText {
         val head = body.trimStart('\uFEFF').trimStart().take(2500).lowercase()
         if (head.isEmpty()) return null
         val status = httpStatus?.let { " (HTTP $it)" }.orEmpty()
-        val cloudflare = "just a moment" in head ||
-            "cf-browser-verification" in head ||
-            "cf-challenge" in head ||
-            "checking your browser" in head ||
-            ("cloudflare" in head && ("challenge" in head || "attention required" in head))
-        if (cloudflare) {
+        if (isCloudflareHead(head)) {
             return "The server returned a Cloudflare check page$status, not the JSON feed. " +
-                "This app does not complete that check. Use a URL that returns the feed directly."
+                "Tap Solve check and complete the page yourself."
         }
         if (head.startsWith("<!doctype") || head.startsWith("<html") || head.startsWith("<head")) {
             return "The server returned a web page$status, not JSON."
         }
         return null
+    }
+
+    fun isCloudflareInterstitial(body: String): Boolean {
+        if (looksLikeJson(body)) return false
+        val head = body.trimStart('\uFEFF').trimStart().take(2500).lowercase()
+        return isCloudflareHead(head)
+    }
+
+    private fun isCloudflareHead(head: String): Boolean {
+        return "just a moment" in head ||
+            "cf-browser-verification" in head ||
+            "cf-challenge" in head ||
+            "checking your browser" in head ||
+            ("cloudflare" in head && ("challenge" in head || "attention required" in head))
     }
 }

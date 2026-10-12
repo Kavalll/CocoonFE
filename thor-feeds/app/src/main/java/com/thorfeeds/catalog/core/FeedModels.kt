@@ -25,4 +25,6 @@ data class CatalogRow(
     val all: List<ParsedRelease> get() = listOf(latest) + older
 }
 
-class FeedFormatException(message: String) : Exception(message)
+open class FeedFormatException(message: String) : Exception(message)
+
+class FeedChallengeException(message: String) : FeedFormatException(message)

@@ -81,6 +81,7 @@ fun CatalogRoute(
     onOpenSources: () -> Unit,
     onChooseFolder: () -> Unit,
     onImportFeed: () -> Unit,
+    onSolve: (sourceId: String, url: String) -> Unit,
 ) {
     val vm: CatalogViewModel = viewModel()
     val entities by vm.releases.collectAsStateWithLifecycle()
@@ -142,6 +143,12 @@ fun CatalogRoute(
                 )
             }
             errors.forEach { message -> Banner(message) }
+            sources.filter { it.needsSolve && it.isRemote }.forEach { source ->
+                FilledTonalButton(
+                    onClick = { onSolve(source.id, source.location) },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                ) { Text("Solve check · ${source.label}") }
+            }
             OutlinedTextField(
                 value = query,
                 onValueChange = vm::setQuery,
@@ -353,6 +360,7 @@ fun SourcesRoute(
     onBack: () -> Unit,
     onChooseFolder: () -> Unit,
     onImportFeed: () -> Unit,
+    onSolve: (sourceId: String, url: String) -> Unit,
 ) {
     val vm: CatalogViewModel = viewModel()
     val sources by vm.sources.collectAsStateWithLifecycle()
@@ -412,6 +420,9 @@ fun SourcesRoute(
                         )
                         Text(source.location, maxLines = 2, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         source.lastError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        if (source.needsSolve && source.isRemote) {
+                            Button(onClick = { onSolve(source.id, source.location) }) { Text("Solve check") }
+                        }
                         Row {
                             if (source.isRemote) {
                                 IconButton(onClick = { editing = source }) { Icon(Icons.Filled.Edit, "Edit URL") }

@@ -1,5 +1,6 @@
 package com.thorfeeds.catalog.net
 
+import com.thorfeeds.catalog.core.FeedChallengeException
 import com.thorfeeds.catalog.core.FeedFormatException
 import com.thorfeeds.catalog.core.FeedText
 import okhttp3.OkHttpClient
@@ -24,7 +25,10 @@ class FeedFetcher(private val http: OkHttpClient) {
                 throw FeedFormatException("That feed is too large to import.")
             }
             val text = FeedText.decode(bytes)
-            FeedText.blockMessage(text, response.code)?.let { throw FeedFormatException(it) }
+            FeedText.blockMessage(text, response.code)?.let { message ->
+                if (FeedText.isCloudflareInterstitial(text)) throw FeedChallengeException(message)
+                throw FeedFormatException(message)
+            }
             if (response.code == 404) throw FeedFormatException("The feed URL was not found (HTTP 404).")
             if (!response.isSuccessful) {
                 throw FeedFormatException("The feed server returned HTTP ${response.code}, not a JSON feed.")

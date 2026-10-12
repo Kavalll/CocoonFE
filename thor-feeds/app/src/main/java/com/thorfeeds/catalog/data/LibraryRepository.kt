@@ -2,9 +2,11 @@ package com.thorfeeds.catalog.data
 
 import android.content.Context
 import android.net.Uri
+import com.thorfeeds.catalog.core.FeedChallengeException
 import com.thorfeeds.catalog.core.FeedFormatException
 import com.thorfeeds.catalog.core.FeedParser
 import com.thorfeeds.catalog.core.FeedUrls
+import com.thorfeeds.catalog.core.FeedWebReader
 import com.thorfeeds.catalog.core.OnDeviceMatcher
 import com.thorfeeds.catalog.core.UriHosts
 import com.thorfeeds.catalog.net.FeedFetcher
@@ -19,11 +21,18 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.util.UUID
 
+data class FeedSolveSession(
+    val sourceId: String,
+    val url: String,
+    val displayId: Int,
+)
+
 class LibraryRepository(
     private val context: Context,
     private val settings: SettingsStore,
     private val dao: ReleaseDao,
     private val http: OkHttpClient,
+    private val webFeeds: FeedWebReader,
     private val scanner: FolderScanner = FolderScanner(context),
     private val feeds: FeedFetcher = FeedFetcher(http),
 ) {
@@ -36,6 +45,7 @@ class LibraryRepository(
     val selection = MutableStateFlow<String?>(null)
     val folderLabel = MutableStateFlow<String?>(null)
     val folderProblem = MutableStateFlow<String?>(null)
+    val solveSession = MutableStateFlow<FeedSolveSession?>(null)
 
     fun select(canonicalTitle: String) {
         selection.value = canonicalTitle
@@ -150,21 +160,45 @@ class LibraryRepository(
 
     private suspend fun refresh(source: SourceRecord) {
         try {
-            val text = withContext(Dispatchers.IO) {
-                if (source.isRemote) feeds.fetch(source.location) else readLocal(source.location)
-            }
+            val text = if (source.isRemote) readRemote(source.location) else withContext(Dispatchers.IO) { readLocal(source.location) }
             val feed = FeedParser.parse(text)
             dao.replaceFeed(source.id, feed.releases.map { it.toEntity(source.id) })
-            updateRecord(source.copy(label = feed.name.ifBlank { source.label }, lastError = null))
+            updateRecord(source.copy(label = feed.name.ifBlank { source.label }, lastError = null, needsSolve = false))
         } catch (cancelled: CancellationException) {
             throw cancelled
+        } catch (error: FeedChallengeException) {
+            UriHosts.hostOf(source.location)?.let { host -> settings.forgetClearedHost(host) }
+            updateRecord(source.copy(lastError = error.message, needsSolve = source.isRemote))
         } catch (error: Exception) {
             val message = when (error) {
                 is FeedFormatException -> error.message
                 else -> "Couldn't read this feed."
             }
-            updateRecord(source.copy(lastError = message ?: "Couldn't read this feed."))
+            updateRecord(source.copy(lastError = message ?: "Couldn't read this feed.", needsSolve = false))
         }
+    }
+
+    fun beginSolve(sourceId: String, url: String, displayId: Int) {
+        solveSession.value = FeedSolveSession(sourceId = sourceId, url = url, displayId = displayId)
+    }
+
+    fun clearSolve() {
+        solveSession.value = null
+    }
+
+    suspend fun acceptWebFeed(sourceId: String, body: String) {
+        val source = settings.sources.first().firstOrNull { it.id == sourceId } ?: return
+        val feed = FeedParser.parse(body)
+        dao.replaceFeed(source.id, feed.releases.map { it.toEntity(source.id) })
+        UriHosts.hostOf(source.location)?.let { host -> settings.rememberClearedHost(host) }
+        updateRecord(source.copy(label = feed.name.ifBlank { source.label }, lastError = null, needsSolve = false))
+        rescan()
+    }
+
+    private suspend fun readRemote(url: String): String {
+        val host = UriHosts.hostOf(url)
+        val cleared = host != null && host in settings.clearedFeedHosts.first()
+        return if (cleared) webFeeds.load(url, interactive = false) else withContext(Dispatchers.IO) { feeds.fetch(url) }
     }
 
     private suspend fun updateRecord(record: SourceRecord) {

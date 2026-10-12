@@ -27,6 +27,7 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val folderLabel = graph.library.folderLabel
     val folderProblem = graph.library.folderProblem
     val download = graph.downloads.snapshot
+    val solveSession = graph.library.solveSession
     val query = MutableStateFlow("")
 
     private val messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
@@ -55,6 +56,24 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     fun setFolder(uri: String) = launch { graph.library.setFolder(uri) }
 
     fun setUseSecondScreen(enabled: Boolean) = launch { graph.library.setUseSecondScreen(enabled) }
+
+    fun startSolve(sourceId: String, url: String, displayId: Int) {
+        graph.library.beginSolve(sourceId, url, displayId)
+    }
+
+    fun cancelSolve() {
+        ThorFeedsApp.graph(getApplication()).webFeeds.cancelLoad()
+        graph.library.clearSolve()
+    }
+
+    fun completeSolve(sourceId: String, body: String) = launch {
+        graph.library.acceptWebFeed(sourceId, body)
+        graph.library.clearSolve()
+    }
+
+    fun noteSolveFailure(message: String) {
+        messages.tryEmit(message)
+    }
 
     fun startDownload(releaseId: String) {
         if (graph.downloads.isRunning()) {

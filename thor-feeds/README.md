@@ -29,7 +29,7 @@ A feed is a `DownloadSourceFeed`:
 
 In the app, open **Feeds** and choose **Add URL**. Paste an `http` or `https` URL. Nothing is prefilled.
 
-You can also choose **Import JSON** and pick a local file with the same shape. Web pages, including challenge pages, are rejected.
+You can also choose **Import JSON** and pick a local file with the same shape. The URL does not need to end in `.json`. If the server returns a Cloudflare check page, tap **Solve check** and complete that page yourself. The feed is then read in that same page. Game downloads are unchanged.
 
 Edit or remove a remote URL from the same screen. Removing a feed does not delete files already in the games folder.
 

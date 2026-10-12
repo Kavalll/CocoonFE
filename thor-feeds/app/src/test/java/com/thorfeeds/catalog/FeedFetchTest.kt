@@ -1,5 +1,6 @@
 package com.thorfeeds.catalog
 
+import com.thorfeeds.catalog.core.FeedChallengeException
 import com.thorfeeds.catalog.core.FeedFormatException
 import com.thorfeeds.catalog.core.FeedParser
 import com.thorfeeds.catalog.core.FeedText
@@ -29,7 +30,16 @@ class FeedFetchTest {
         )
         assertTrue(message.orEmpty().contains("Cloudflare"))
         assertTrue(message.orEmpty().contains("HTTP 403"))
+        assertTrue(message.orEmpty().contains("Solve check"))
         assertFalse(message.orEmpty().contains("Couldn't read this feed"))
+    }
+
+    @Test
+    fun webViewTextKeepsJsonAndIgnoresTheCheckPage() {
+        val encoded = "\"{\\\"name\\\":\\\"Shelf\\\",\\\"downloads\\\":[]}\""
+        val decoded = com.thorfeeds.catalog.core.WebFeedText.decodeJavascriptResult(encoded)
+        assertTrue(decoded.contains("\"name\""))
+        assertEquals(null, com.thorfeeds.catalog.core.WebFeedText.accept("<html>Just a moment...</html>"))
     }
 
     @Test
@@ -68,9 +78,10 @@ class FeedFetchTest {
         try {
             FeedFetcher(OkHttpClient()).fetch(server.url("/feed").toString())
             throw AssertionError("Expected the Cloudflare page to fail the fetch")
-        } catch (error: FeedFormatException) {
+        } catch (error: FeedChallengeException) {
             assertTrue(error.message.orEmpty().contains("Cloudflare"))
             assertTrue(error.message.orEmpty().contains("HTTP 503"))
+            assertTrue(error.message.orEmpty().contains("Solve check"))
         } finally {
             server.shutdown()
         }

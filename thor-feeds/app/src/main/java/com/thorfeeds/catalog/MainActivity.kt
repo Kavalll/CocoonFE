@@ -10,7 +10,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.Modifier
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,7 +29,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.thorfeeds.catalog.data.FolderScanner
+import android.view.Display
 import com.thorfeeds.catalog.ui.CatalogRoute
+import com.thorfeeds.catalog.ui.FeedSolveHost
 import com.thorfeeds.catalog.ui.CatalogViewModel
 import com.thorfeeds.catalog.ui.DetailRoute
 import com.thorfeeds.catalog.ui.DisplaySignals
@@ -83,7 +88,10 @@ class MainActivity : ComponentActivity() {
 
                 val folderLauncher = rememberLauncher()
                 val importLauncher = rememberImporter(vm)
+                val displayId = display?.displayId ?: Display.DEFAULT_DISPLAY
+                val solve: (String, String) -> Unit = { sourceId, url -> vm.startSolve(sourceId, url, displayId) }
 
+                Box(Modifier.fillMaxSize()) {
                 NavHost(navController = nav, startDestination = "catalog") {
                     composable("catalog") {
                         CatalogRoute(
@@ -95,6 +103,7 @@ class MainActivity : ComponentActivity() {
                             onOpenSources = { nav.navigate("sources") },
                             onChooseFolder = { folderLauncher() },
                             onImportFeed = { importLauncher() },
+                            onSolve = solve,
                         )
                     }
                     composable("detail") {
@@ -109,8 +118,11 @@ class MainActivity : ComponentActivity() {
                             onBack = { nav.popBackStack() },
                             onChooseFolder = { folderLauncher() },
                             onImportFeed = { importLauncher() },
+                            onSolve = solve,
                         )
                     }
+                }
+                FeedSolveHost(displayId = displayId, primary = true)
                 }
             }
         }

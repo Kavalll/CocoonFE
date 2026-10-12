@@ -10,6 +10,7 @@ import com.thorfeeds.catalog.download.DownloadController
 import com.thorfeeds.catalog.net.OkHttpFileFetcher
 import com.thorfeeds.catalog.net.RealMirrorRouter
 import com.thorfeeds.catalog.net.ReleaseDownloader
+import com.thorfeeds.catalog.webview.WebFeedGate
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -23,6 +24,7 @@ class AppGraph(context: Context) {
         .followSslRedirects(true)
         .retryOnConnectionFailure(true)
         .build()
+    val webFeeds = WebFeedGate()
     val database: CatalogDatabase = Room.databaseBuilder(
         appContext,
         CatalogDatabase::class.java,
@@ -33,6 +35,7 @@ class AppGraph(context: Context) {
         settings = SettingsStore(appContext),
         dao = database.releases(),
         http = http,
+        webFeeds = webFeeds,
     )
     val downloads = DownloadController(
         context = appContext,
