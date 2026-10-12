@@ -44,7 +44,7 @@ class DetailActivity : ComponentActivity() {
                             finish()
                         },
                     )
-                    FeedSolveHost(displayId = displayId, primary = false)
+                    FeedSolveHost(displayId = displayId)
                 }
             }
         }

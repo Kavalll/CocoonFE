@@ -28,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.thorfeeds.catalog.ThorFeedsApp
 import com.thorfeeds.catalog.data.FolderScanner
 import android.view.Display
 import com.thorfeeds.catalog.ui.CatalogRoute
@@ -40,8 +41,14 @@ import com.thorfeeds.catalog.ui.SourcesRoute
 import com.thorfeeds.catalog.ui.ThorFeedsTheme
 
 class MainActivity : ComponentActivity() {
+    override fun onDestroy() {
+        ThorFeedsApp.graph(this).webFeeds.unbind(this)
+        super.onDestroy()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThorFeedsApp.graph(this).webFeeds.bind(this)
         enableEdgeToEdge()
         setContent {
             ThorFeedsTheme {
@@ -122,7 +129,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
-                FeedSolveHost(displayId = displayId, primary = true)
+                FeedSolveHost(displayId = displayId)
                 }
             }
         }

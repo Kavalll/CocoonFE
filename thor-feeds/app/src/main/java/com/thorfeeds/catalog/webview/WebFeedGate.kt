@@ -1,8 +1,11 @@
 package com.thorfeeds.catalog.webview
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.os.Handler
 import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -27,8 +30,20 @@ import kotlin.coroutines.resumeWithException
  */
 class WebFeedGate : FeedWebReader {
     private val main = Handler(Looper.getMainLooper())
-    private var webView: WebView? = null
+    private var host: Activity? = null
+    private var visibleView: WebView? = null
+    private var quietView: WebView? = null
+    private var activeView: WebView? = null
     private var waiter: Waiter? = null
+
+    fun bind(activity: Activity) {
+        host = activity
+    }
+
+    fun unbind(activity: Activity) {
+        if (host === activity) host = null
+        releaseQuiet()
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     fun attach(view: WebView) {
@@ -45,20 +60,34 @@ class WebFeedGate : FeedWebReader {
                 inspect(view)
             }
         }
-        webView = view
+        visibleView = view
     }
 
     fun detach(view: WebView) {
-        if (webView === view) webView = null
+        if (visibleView === view) visibleView = null
+        if (activeView === view) activeView = null
     }
 
     override suspend fun load(url: String, interactive: Boolean): String = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { continuation ->
-            val view = webView
+            val view = if (interactive) {
+                visibleView
+            } else {
+                quietWebView()
+            }
             if (view == null) {
-                continuation.resumeWithException(FeedFormatException("Open Thor Feeds to refresh this feed."))
+                continuation.resumeWithException(
+                    if (interactive) {
+                        FeedFormatException("Open Thor Feeds to refresh this feed.")
+                    } else {
+                        FeedChallengeException(
+                            "The server returned a Cloudflare check page, not the JSON feed. Tap Solve check and complete the page yourself.",
+                        )
+                    },
+                )
                 return@suspendCancellableCoroutine
             }
+            activeView = view
             waiter?.cancel()
             val mine = Waiter(continuation, interactive)
             waiter = mine
@@ -85,7 +114,34 @@ class WebFeedGate : FeedWebReader {
     fun cancelLoad() {
         waiter?.cancel()
         waiter = null
-        webView?.stopLoading()
+        activeView?.stopLoading()
+        releaseQuiet()
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun quietWebView(): WebView? {
+        quietView?.let { return it }
+        val activity = host ?: return null
+        val view = WebView(activity)
+        view.visibility = View.GONE
+        view.setBackgroundColor(0)
+        attach(view)
+        visibleView = null
+        (activity.window.decorView as ViewGroup).addView(
+            view,
+            ViewGroup.LayoutParams(1, 1),
+        )
+        quietView = view
+        return view
+    }
+
+    private fun releaseQuiet() {
+        val view = quietView ?: return
+        quietView = null
+        if (activeView === view) activeView = null
+        (view.parent as? ViewGroup)?.removeView(view)
+        view.stopLoading()
+        view.destroy()
     }
 
     private fun inspect(view: WebView) {
@@ -112,6 +168,7 @@ class WebFeedGate : FeedWebReader {
         val current = waiter ?: return
         current.timeout?.let(main::removeCallbacks)
         waiter = null
+        if (!current.interactive) releaseQuiet()
         if (current.continuation.isActive) current.continuation.resume(body)
     }
 
@@ -119,7 +176,8 @@ class WebFeedGate : FeedWebReader {
         val current = waiter ?: return
         current.timeout?.let(main::removeCallbacks)
         waiter = null
-        webView?.stopLoading()
+        activeView?.stopLoading()
+        if (!current.interactive) releaseQuiet()
         if (current.continuation.isActive) current.continuation.resumeWithException(error)
     }
 
