@@ -485,7 +485,7 @@ private fun UrlDialog(title: String, initial: String, onDismiss: () -> Unit, onS
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                placeholder = { Text("https://example.test/feed.json") },
+                placeholder = { Text("https://example.test/feed") },
             )
         },
         confirmButton = { TextButton(onClick = { onSave(text) }) { Text("Save") } },

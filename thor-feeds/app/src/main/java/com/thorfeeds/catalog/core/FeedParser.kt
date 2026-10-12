@@ -18,14 +18,11 @@ object FeedParser {
     }
 
     fun parse(text: String): ParsedFeed {
-        if (text.isBlank()) throw FeedFormatException("The feed is empty.")
-        if (looksLikeHtml(text)) {
-            throw FeedFormatException(
-                "This is a web page, not a feed. Challenge pages are ignored.",
-            )
-        }
+        val cleaned = text.removePrefix("\uFEFF").trim()
+        if (cleaned.isBlank()) throw FeedFormatException("The feed is empty.")
+        FeedText.blockMessage(cleaned)?.let { throw FeedFormatException(it) }
         val root = try {
-            json.parseToJsonElement(text) as? JsonObject
+            json.parseToJsonElement(cleaned) as? JsonObject
         } catch (e: Exception) {
             throw FeedFormatException("The feed is not JSON.")
         } ?: throw FeedFormatException("The feed must be a JSON object.")

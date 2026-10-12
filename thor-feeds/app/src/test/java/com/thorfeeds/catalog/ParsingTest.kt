@@ -118,10 +118,20 @@ class ParsingTest {
         assertTrue(FeedParser.looksLikeHtml("<!DOCTYPE html><html><title>Just a moment...</title></html>"))
         try {
             FeedParser.parse("<html><body>Just a moment...</body></html>")
-            throw AssertionError("HTML should not parse as a feed")
+            throw AssertionError("A Cloudflare check page should not parse as a feed")
         } catch (error: FeedFormatException) {
-            assertTrue(error.message.orEmpty().contains("web page"))
+            assertTrue(error.message.orEmpty().contains("Cloudflare"))
+            assertFalse(error.message.orEmpty().contains("Couldn't read this feed"))
         }
+
+        val withBomAndSpace = "\uFEFF" + """
+            {"name":"Shelf","downloads":[{"title":"Example Quest Free Download","uploadDate":"2026-10-11T19:02:09+00:00","fileSize":"31 GB","uris":["https://cdn.example/only"]}]}
+        """.trim() + "\n\n"
+        assertEquals("Shelf", FeedParser.parse(withBomAndSpace).name)
+        assertEquals(
+            "https://feeds.example/shelf",
+            FeedUrls.normalize("https://feeds.example/shelf"),
+        )
     }
 
     @Test
