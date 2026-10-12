@@ -12,6 +12,23 @@ interface FeedWebReader {
     suspend fun load(url: String, interactive: Boolean): String
 }
 
+object SolveNavigation {
+    fun isChallenge(title: String?, url: String?): Boolean {
+        val titleText = title?.lowercase().orEmpty()
+        val urlText = url?.lowercase().orEmpty()
+        if ("just a moment" in titleText || "checking your browser" in titleText) return true
+        if ("attention required" in titleText && "cloudflare" in titleText) return true
+        return "cdn-cgi/challenge" in urlText || "__cf_chl" in urlText || "/cdn-cgi/" in urlText
+    }
+
+    /** False while the checkbox page is already up, so the app does not reload it. */
+    fun shouldStartLoad(currentUrl: String?, requestedUrl: String, title: String?): Boolean {
+        if (isChallenge(title, currentUrl)) return false
+        if (currentUrl.isNullOrBlank() || currentUrl == "about:blank") return true
+        return currentUrl.trimEnd('/') != requestedUrl.trimEnd('/')
+    }
+}
+
 object WebFeedText {
     private val json = Json { ignoreUnknownKeys = true }
 

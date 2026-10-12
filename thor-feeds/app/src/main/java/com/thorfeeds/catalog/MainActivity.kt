@@ -129,7 +129,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
-                FeedSolveHost(displayId = displayId)
+                FeedSolveHost()
                 }
             }
         }

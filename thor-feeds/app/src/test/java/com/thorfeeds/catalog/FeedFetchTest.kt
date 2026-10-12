@@ -4,6 +4,7 @@ import com.thorfeeds.catalog.core.FeedChallengeException
 import com.thorfeeds.catalog.core.FeedFormatException
 import com.thorfeeds.catalog.core.FeedParser
 import com.thorfeeds.catalog.core.FeedText
+import com.thorfeeds.catalog.core.SolveNavigation
 import com.thorfeeds.catalog.net.FeedFetcher
 import com.thorfeeds.catalog.net.HttpIdentity
 import okhttp3.OkHttpClient
@@ -32,6 +33,14 @@ class FeedFetchTest {
         assertTrue(message.orEmpty().contains("HTTP 403"))
         assertTrue(message.orEmpty().contains("Solve check"))
         assertFalse(message.orEmpty().contains("Couldn't read this feed"))
+    }
+
+    @Test
+    fun challengePageIsNotLoadedAgain() {
+        assertFalse(SolveNavigation.shouldStartLoad("https://feeds.example/list", "https://feeds.example/list", "Just a moment..."))
+        assertFalse(SolveNavigation.shouldStartLoad("https://feeds.example/cdn-cgi/challenge", "https://feeds.example/list", "Feed"))
+        assertTrue(SolveNavigation.shouldStartLoad(null, "https://feeds.example/list", null))
+        assertTrue(SolveNavigation.shouldStartLoad("about:blank", "https://feeds.example/list", null))
     }
 
     @Test

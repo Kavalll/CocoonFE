@@ -196,6 +196,11 @@ class LibraryRepository(
     }
 
     private suspend fun readRemote(url: String): String {
+        if (solveSession.value?.url == url) {
+            throw FeedChallengeException(
+                "Finish Solve check on this feed. The check page is left open so it is not reloaded.",
+            )
+        }
         val host = UriHosts.hostOf(url)
         val cleared = host != null && host in settings.clearedFeedHosts.first()
         return if (cleared) webFeeds.load(url, interactive = false) else withContext(Dispatchers.IO) { feeds.fetch(url) }
