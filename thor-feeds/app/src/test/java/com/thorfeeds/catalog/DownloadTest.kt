@@ -8,7 +8,10 @@ import com.thorfeeds.catalog.net.ExistingPartial
 import com.thorfeeds.catalog.net.FileFetcher
 import com.thorfeeds.catalog.net.GofileContents
 import com.thorfeeds.catalog.net.GofileResolver
+import com.thorfeeds.catalog.net.GofileTokenStore
 import com.thorfeeds.catalog.net.GofileWebsiteToken
+import com.thorfeeds.catalog.net.GofileWtSecret
+import com.thorfeeds.catalog.net.MemoryGofileTokenStore
 import com.thorfeeds.catalog.net.MirrorException
 import com.thorfeeds.catalog.net.MirrorRouter
 import com.thorfeeds.catalog.net.OkHttpFileFetcher
@@ -34,15 +37,31 @@ import java.io.OutputStream
 
 class DownloadTest {
     @Test
-    fun websiteTokenMatchesTheDocumentedFormula() {
+    fun websiteTokenMatchesTheGuestFormula() {
         val token = GofileWebsiteToken.compute(
-            userAgent = "TestAgent",
+            userAgent = GofileWebsiteToken.USER_AGENT,
             language = "en-US",
             accountToken = "guest-token",
             unixSeconds = 1_700_000_000L,
-            salt = GofileWebsiteToken.PRIMARY_SALT,
+            salt = "test-secret",
         )
-        assertEquals("8cf366de2aceb62d22b7a1a7496d20bc6a2aad38dbdfab49a98fc2b62d8cd1cf", token)
+        assertEquals("3f860122d8ea950a561032df6bec1933199732a5480cb374b7cdf07923f443ab", token)
+    }
+
+    @Test
+    fun gofileScriptDiscoveryStaysOnTheGofileSite() {
+        val html = """<html><script src="/js/wt.obf.js"></script><script src="https://evil.test/wt.js"></script></html>"""
+        assertEquals("https://gofile.io/js/wt.obf.js", GofileWtSecret.scriptUrlFromHomepage(html))
+        assertEquals(null, GofileWtSecret.scriptUrlFromHomepage("""<script src="http://gofile.io/js/wt.js"></script>"""))
+        val secret = GofileWtSecret.extract(
+            """
+            function generateWT(token) {
+              var slot = Math.floor(Date.now() / 1000 / 14400);
+              return _sha256(navigator.userAgent + '::' + navigator.language + '::' + token + '::' + slot + '::' + 'unit-secret');
+            }
+            """.trimIndent(),
+        )
+        assertEquals("unit-secret", secret)
     }
 
     @Test
@@ -74,7 +93,7 @@ class DownloadTest {
     }
 
     @Test
-    fun gofileResolverUsesContentsApiThenSharePage() {
+    fun gofileGuestAccountSignsTheContentsRequest() {
         val server = MockWebServer()
         server.start()
         try {
@@ -83,41 +102,65 @@ class DownloadTest {
                 MockResponse()
                     .setHeader("Content-Type", "application/json")
                     .setBody(
-                        """{"status":"ok","data":{"type":"file","name":"harbor.zip","size":4,"link":"https://cdn.example/harbor.zip"}}""",
+                        """{"status":"ok","data":{"type":"file","name":"harbor.zip","size":4,"link":"https://cdn.example/harbor.zip"},"metadata":{"totalPages":1}}""",
                     ),
             )
-            val resolver = gofile(server)
-            val resolved = resolver.resolve("https://gofile.io/d/example")
-            server.takeRequest()
+            val resolved = gofile(server).resolve("https://gofile.io/d/example")
+            val created = server.takeRequest()
+            assertEquals("/accounts", created.path)
+            assertEquals("en-US", created.getHeader("X-BL"))
+            assertEquals(websiteToken(""), created.getHeader("X-Website-Token"))
             val contents = server.takeRequest()
-            assertEquals(
-                "8cf366de2aceb62d22b7a1a7496d20bc6a2aad38dbdfab49a98fc2b62d8cd1cf",
-                contents.getHeader("X-Website-Token"),
-            )
+            assertTrue(contents.path!!.startsWith("/contents/example"))
+            assertTrue(contents.path!!.contains("pageSize=1000"))
             assertEquals("Bearer guest-token", contents.getHeader("Authorization"))
+            assertEquals(websiteToken("guest-token"), contents.getHeader("X-Website-Token"))
             assertEquals("https://cdn.example/harbor.zip", resolved.files.single().url)
-            assertEquals("Gofile", resolved.label)
+            assertTrue(resolved.files.single().headers["Cookie"].orEmpty().contains("accountToken=guest-token"))
         } finally {
             server.shutdown()
         }
     }
 
     @Test
-    fun gofileResolverFallsThroughWhenTheApiRefuses() {
+    fun gofileNotPremiumRefreshesTheGuestTokenOnce() {
         val server = MockWebServer()
         server.start()
         try {
-            server.enqueue(MockResponse().setBody("""{"status":"ok","data":{"token":"guest-token"}}"""))
+            server.enqueue(MockResponse().setBody("""{"status":"ok","data":{"token":"stale-token"}}"""))
+            server.enqueue(MockResponse().setBody("""{"status":"error-notPremium","data":{}}"""))
+            server.enqueue(MockResponse().setBody("""{"status":"ok","data":{"token":"fresh-token"}}"""))
+            server.enqueue(MockResponse().setBody("""{"status":"error-notPremium","data":{}}"""))
+            try {
+                gofile(server).resolve("https://gofile.io/d/example")
+                throw AssertionError("A second guest rejection should skip the mirror")
+            } catch (error: MirrorException) {
+                assertTrue(error.message.orEmpty().contains("Gofile"))
+                assertTrue(error.message.orEmpty().contains("guest"))
+                assertFalse(error.message.orEmpty().contains("error-notPremium"))
+            }
+            assertEquals(4, server.requestCount)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun gofileReusesACachedGuestToken() {
+        val server = MockWebServer()
+        server.start()
+        try {
             server.enqueue(
-                MockResponse().setHeader("Content-Type", "application/json")
-                    .setBody("""{"status":"error-notPremium","data":{}}"""),
+                MockResponse().setBody(
+                    """{"status":"ok","data":{"type":"file","name":"harbor.zip","link":"https://cdn.example/harbor.zip"}}""",
+                ),
             )
-            server.enqueue(
-                MockResponse().setHeader("Content-Type", "text/html")
-                    .setBody("""<a href="https://store-9.gofile.io/download/web/example/harbor.zip">download</a>"""),
-            )
-            val resolved = gofile(server).resolve("https://gofile.io/d/example")
-            assertTrue(resolved.files.single().url.contains("/download/web/example/harbor.zip"))
+            val store = MemoryGofileTokenStore().apply { write("cached-token") }
+            val resolved = gofile(server, store).resolve("https://gofile.io/d/example")
+            val contents = server.takeRequest()
+            assertEquals("Bearer cached-token", contents.getHeader("Authorization"))
+            assertEquals(1, server.requestCount)
+            assertEquals("https://cdn.example/harbor.zip", resolved.files.single().url)
         } finally {
             server.shutdown()
         }
@@ -319,15 +362,25 @@ class DownloadTest {
         }
     }
 
-    private fun gofile(server: MockWebServer): GofileResolver {
+    private fun gofile(server: MockWebServer, store: GofileTokenStore = MemoryGofileTokenStore()): GofileResolver {
         val root = server.url("/").toString().trimEnd('/')
         return GofileResolver(
             pages = PageFetcher(OkHttpClient()),
-            apiBase = root,
-            siteBase = root,
-            userAgent = "TestAgent",
-            salts = listOf(GofileWebsiteToken.PRIMARY_SALT),
+            tokens = store,
+            secretSource = { "test-secret" },
+            userAgent = GofileWebsiteToken.USER_AGENT,
             clockSeconds = { 1_700_000_000L },
+            apiBase = root,
+        )
+    }
+
+    private fun websiteToken(accountToken: String): String {
+        return GofileWebsiteToken.compute(
+            userAgent = GofileWebsiteToken.USER_AGENT,
+            language = "en-US",
+            accountToken = accountToken,
+            unixSeconds = 1_700_000_000L,
+            salt = "test-secret",
         )
     }
 

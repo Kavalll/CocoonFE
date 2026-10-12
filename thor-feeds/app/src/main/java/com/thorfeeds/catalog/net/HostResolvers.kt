@@ -3,8 +3,9 @@ package com.thorfeeds.catalog.net
 import com.thorfeeds.catalog.core.HostKind
 import com.thorfeeds.catalog.core.Names
 import com.thorfeeds.catalog.core.UriHosts
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import android.content.Context
 import okhttp3.OkHttpClient
+import java.io.File
 
 class DirectResolver {
     fun resolve(uri: String): ResolvedMirror {
@@ -85,112 +86,6 @@ class DataNodesResolver(private val pages: PageFetcher) {
     }
 }
 
-class GofileResolver(
-    private val pages: PageFetcher,
-    apiBase: String = "https://api.gofile.io",
-    siteBase: String = "https://gofile.io",
-    private val userAgent: String = HttpIdentity.USER_AGENT,
-    private val salts: List<String> = listOf(GofileWebsiteToken.PRIMARY_SALT, GofileWebsiteToken.ALTERNATE_SALT),
-    private val clockSeconds: () -> Long = { System.currentTimeMillis() / 1000L },
-) {
-    private val apiRoot = apiBase.trimEnd('/')
-    private val siteRoot = siteBase.trimEnd('/')
-
-    fun resolve(uri: String): ResolvedMirror {
-        val id = contentId(uri) ?: throw MirrorException("Unrecognized Gofile link")
-        val account = createGuest()
-        val headers = downloadHeaders(account)
-        var lastStatus = "no response"
-        for (salt in salts.distinct()) {
-            val listing = fetchListing(id, account, salt, headers, uri)
-            if (listing.status == "error-passwordRequired") {
-                throw MirrorException("Gofile password is not available, so this mirror was skipped")
-            }
-            if (listing.status == "error-notFound") {
-                throw MirrorException("Gofile could not find this file")
-            }
-            if (listing.files.isNotEmpty()) {
-                return ResolvedMirror(label = "Gofile", files = listing.files)
-            }
-            if (listing.status == "ok" && listing.folderIds.isNotEmpty()) {
-                val nested = listing.folderIds.take(5).flatMap { folderId ->
-                    fetchListing(folderId, account, salts.first(), headers, uri).files
-                }
-                if (nested.isNotEmpty()) return ResolvedMirror(label = "Gofile", files = nested)
-            }
-            lastStatus = listing.status
-            if (listing.status == "ok") break
-        }
-        val page = pages.get("$siteRoot/d/$id", headers)
-        val fromPage = GofileContents.linksFromHtml(page.body, uri, headers)
-        if (fromPage.isNotEmpty()) return ResolvedMirror(label = "Gofile", files = fromPage)
-        throw MirrorException("Gofile ($lastStatus)")
-    }
-
-    private fun fetchListing(
-        id: String,
-        account: String,
-        salt: String,
-        headers: Map<String, String>,
-        mirrorUri: String,
-    ): GofileListing {
-        val token = GofileWebsiteToken.compute(userAgent, "en-US", account, clockSeconds(), salt)
-        val url = apiRoot.toHttpUrl().newBuilder()
-            .addPathSegment("contents")
-            .addPathSegment(id)
-            .addQueryParameter("contentFilter", "")
-            .addQueryParameter("page", "1")
-            .addQueryParameter("pageSize", "1000")
-            .addQueryParameter("sortField", "name")
-            .addQueryParameter("sortDirection", "1")
-            .build()
-        val body = pages.get(
-            url.toString(),
-            headers + mapOf(
-                "Authorization" to "Bearer $account",
-                "X-Website-Token" to token,
-                "X-BL" to "en-US",
-                "Accept" to "application/json",
-            ),
-        )
-        if (body.code >= 500) return GofileListing("http-${body.code}", emptyList(), emptyList())
-        return GofileContents.parse(body.body, mirrorUri, headers)
-            ?: GofileListing(status = "unreadable", files = emptyList(), folderIds = emptyList())
-    }
-
-    private fun createGuest(): String {
-        val response = pages.postJson(
-            "$apiRoot/accounts",
-            "{}",
-            mapOf("User-Agent" to userAgent, "Accept" to "application/json"),
-        )
-        if (response.code >= 400) throw MirrorException("Gofile did not open a guest session")
-        val token = Regex(""""token"\s*:\s*"([^"]+)"""").find(response.body)?.groupValues?.get(1)
-        if (token.isNullOrBlank()) throw MirrorException("Gofile did not open a guest session")
-        return token
-    }
-
-    private fun downloadHeaders(accountToken: String): Map<String, String> {
-        return mapOf(
-            "User-Agent" to userAgent,
-            "Referer" to "https://gofile.io/",
-            "Origin" to "https://gofile.io",
-            "Cookie" to "accountToken=$accountToken",
-        )
-    }
-
-    companion object {
-        fun contentId(uri: String): String? {
-            if (UriHosts.kind(uri) != HostKind.GOFILE_SHARE) return null
-            val path = UriHosts.pathOf(uri).trimEnd('/')
-            if (!path.startsWith("/d/")) return null
-            val id = path.removePrefix("/d/")
-            if (id.isBlank() || "/" in id) return null
-            return id
-        }
-    }
-}
-
 class RealMirrorRouter(
     private val gofile: GofileResolver,
     private val oneFichier: OneFichierResolver,
@@ -210,10 +105,15 @@ class RealMirrorRouter(
     }
 
     companion object {
-        fun create(client: OkHttpClient): RealMirrorRouter {
+        fun create(context: Context, client: OkHttpClient): RealMirrorRouter {
             val pages = PageFetcher(client)
+            val secret = GofileScriptSecret(pages)
             return RealMirrorRouter(
-                gofile = GofileResolver(pages),
+                gofile = GofileResolver(
+                    pages = pages,
+                    tokens = FileGofileTokenStore(File(context.filesDir, "gofile-guest-token.json")),
+                    secretSource = { secret.secret() },
+                ),
                 oneFichier = OneFichierResolver(pages),
                 vikingFile = VikingFileResolver(pages),
                 dataNodes = DataNodesResolver(pages),

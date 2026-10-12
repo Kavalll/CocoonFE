@@ -26,6 +26,11 @@ class PageFetcher(private val client: OkHttpClient) {
         return execute(Request.Builder().url(url).post(form).applyHeaders(headers).build())
     }
 
+    fun postEmpty(url: String, headers: Map<String, String> = emptyMap()): PageBody {
+        val body = ByteArray(0).toRequestBody(null)
+        return execute(Request.Builder().url(url).post(body).applyHeaders(headers).build())
+    }
+
     fun postJson(url: String, json: String, headers: Map<String, String> = emptyMap()): PageBody {
         val body = json.toRequestBody(JSON)
         val request = Request.Builder().url(url).post(body).applyHeaders(headers).build()

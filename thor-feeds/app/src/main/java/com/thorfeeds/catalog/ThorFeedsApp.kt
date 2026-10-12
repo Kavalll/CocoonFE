@@ -40,7 +40,7 @@ class AppGraph(context: Context) {
     val downloads = DownloadController(
         context = appContext,
         library = library,
-        downloader = ReleaseDownloader(RealMirrorRouter.create(http), OkHttpFileFetcher(http)),
+        downloader = ReleaseDownloader(RealMirrorRouter.create(appContext, http), OkHttpFileFetcher(http)),
     )
 }
 
