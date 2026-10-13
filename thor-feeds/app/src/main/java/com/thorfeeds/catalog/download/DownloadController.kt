@@ -3,7 +3,11 @@ package com.thorfeeds.catalog.download
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import com.thorfeeds.catalog.core.ArchiveFormat
+import com.thorfeeds.catalog.core.ArchiveLayout
 import com.thorfeeds.catalog.core.Names
+import com.thorfeeds.catalog.core.UnpackException
+import com.thorfeeds.catalog.data.GameArchiveExtractor
 import com.thorfeeds.catalog.data.LibraryRepository
 import com.thorfeeds.catalog.data.SafByteSink
 import com.thorfeeds.catalog.data.toParsed
@@ -17,12 +21,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 enum class DownloadPhase {
     Connecting,
     Running,
+    Extracting,
     Completed,
     Failed,
     Cancelled,
@@ -39,6 +46,8 @@ data class DownloadSnapshot(
     val totalBytes: Long?,
     val fileName: String?,
     val message: String?,
+    val archiveUri: String? = null,
+    val offerZArchiver: Boolean = false,
 ) {
     val terminal: Boolean
         get() = phase == DownloadPhase.Completed || phase == DownloadPhase.Failed || phase == DownloadPhase.Cancelled
@@ -118,7 +127,7 @@ class DownloadController(
         snapshot.value = base
         val sink = SafByteSink(context.contentResolver, gameDir)
         try {
-            downloader.download(parsed.uris, sink, object : DownloadListener {
+            val savedNames = downloader.download(parsed.uris, sink, object : DownloadListener {
                 override fun onMirrorStarting(index: Int, count: Int, label: String) {
                     val current = snapshot.value ?: base
                     snapshot.value = current.copy(
@@ -147,13 +156,7 @@ class DownloadController(
                     )
                 }
             })
-            val current = snapshot.value ?: base
-            val saved = "Saved in $directoryName"
-            val previous = current.message?.takeIf { it.contains("Phase:") }
-            snapshot.value = current.copy(
-                phase = DownloadPhase.Completed,
-                message = if (previous.isNullOrBlank()) saved else "$previous\n\n$saved",
-            )
+            extractSaved(gameDir, directoryName, savedNames, base)
             library.rescan()
         } catch (cancelled: CancellationException) {
             val current = snapshot.value ?: base
@@ -168,6 +171,141 @@ class DownloadController(
                 message = failureDetail(current, error),
             )
         }
+    }
+
+    private suspend fun extractSaved(
+        gameDir: androidx.documentfile.provider.DocumentFile,
+        directoryName: String,
+        savedNames: List<String>,
+        base: DownloadSnapshot,
+    ) {
+        val archives = savedNames.mapNotNull { name ->
+            val format = ArchiveLayout.formatOf(name) ?: return@mapNotNull null
+            val document = gameDir.findFile(name)?.takeIf { it.isFile } ?: return@mapNotNull null
+            Triple(name, format, document)
+        }
+        if (archives.isEmpty()) {
+            finishDownload(directoryName, "Saved in $directoryName")
+            return
+        }
+        val deleteAfter = library.deleteArchiveAfterExtract()
+        val notes = mutableListOf<String>()
+        for ((name, format, document) in archives) {
+            currentCoroutineContext().ensureActive()
+            if (TransferControl.isCancelled()) throw CancellationException("Download cancelled")
+            if (document.length() <= 0L) {
+                failExtract(base, name, format, document.uri.toString(), UnpackException(format.label, format == ArchiveFormat.RAR, "The ${format.label} archive is empty, so it was left in the game folder."))
+                return
+            }
+            TransferControl.phase = DownloadPhases.EXTRACTING
+            val current = snapshot.value ?: base
+            snapshot.value = current.copy(
+                phase = DownloadPhase.Extracting,
+                fileName = name,
+                bytesRead = 0L,
+                totalBytes = null,
+                archiveUri = null,
+                offerZArchiver = false,
+            )
+            var lastEmit = 0L
+            try {
+                GameArchiveExtractor.extract(
+                    resolver = context.contentResolver,
+                    archive = document,
+                    format = format,
+                    cancelled = { TransferControl.isCancelled() },
+                ) { written, total ->
+                    val now = System.currentTimeMillis()
+                    if (now - lastEmit > 200 || written == total) {
+                        lastEmit = now
+                        val shown = snapshot.value ?: current
+                        snapshot.value = shown.copy(
+                            phase = DownloadPhase.Extracting,
+                            fileName = name,
+                            bytesRead = written,
+                            totalBytes = total,
+                        )
+                    }
+                }
+                if (deleteAfter) {
+                    if (document.exists() && !document.delete()) {
+                        notes += "$name was extracted, but the archive could not be removed."
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: UnpackException) {
+                failExtract(base, name, format, document.uri.toString(), error)
+                return
+            } catch (error: Exception) {
+                failExtract(
+                    base,
+                    name,
+                    format,
+                    document.uri.toString(),
+                    UnpackException(
+                        format.label,
+                        format == ArchiveFormat.RAR,
+                        error.message ?: "Extraction failed, so the archive was left in the game folder.",
+                        error,
+                    ),
+                )
+                return
+            }
+        }
+        val tail = when {
+            notes.isNotEmpty() -> notes.joinToString(" ")
+            deleteAfter -> "The archive was removed."
+            else -> "The archive is still in the folder."
+        }
+        finishDownload(directoryName, "Extracted in $directoryName. $tail")
+    }
+
+    private fun finishDownload(directoryName: String, text: String) {
+        val current = snapshot.value ?: return
+        val previous = current.message?.takeIf { it.contains("Phase:") && !it.contains("Phase: extracting") }
+        snapshot.value = current.copy(
+            phase = DownloadPhase.Completed,
+            message = if (previous.isNullOrBlank()) text else "$previous\n\n$text",
+            archiveUri = null,
+            offerZArchiver = false,
+        )
+    }
+
+    private fun failExtract(
+        base: DownloadSnapshot,
+        fileName: String,
+        format: ArchiveFormat,
+        archiveUri: String,
+        error: UnpackException,
+    ) {
+        val current = snapshot.value ?: base
+        val installed = error.offerZArchiver && ZArchiverLaunch.installed(context)
+        val detail = buildString {
+            append(error.message ?: "Extraction failed, so the archive was left in the game folder.")
+            if (error.offerZArchiver && !installed) {
+                append("\nZArchiver (ru.zdevs.zarchiver) is not installed. It can open this rar if you install it.")
+            } else if (installed) {
+                append("\nYou can extract this rar with ZArchiver.")
+            }
+        }
+        val report = AttemptReport.format(
+            host = fileName,
+            mirrorIndex = current.mirrorIndex,
+            mirrorCount = current.mirrorCount,
+            phase = DownloadPhases.EXTRACTING,
+            httpStatus = null,
+            apiStatus = format.label,
+            detail = detail,
+        )
+        val previous = current.message?.takeIf { it.contains("Phase:") && !it.contains("Phase: extracting") }
+        snapshot.value = current.copy(
+            phase = DownloadPhase.Failed,
+            fileName = fileName,
+            message = if (previous.isNullOrBlank()) report else "$previous\n\n$report",
+            archiveUri = if (installed) archiveUri else null,
+            offerZArchiver = installed,
+        )
     }
 
     private fun detail(base: DownloadSnapshot, phase: String, text: String): String {

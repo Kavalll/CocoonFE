@@ -15,6 +15,7 @@ object DownloadPhases {
     const val CONNECTING = "connecting"
     const val TRANSFERRING = "transferring"
     const val WRITING = "writing the file"
+    const val EXTRACTING = "extracting"
 }
 
 class AttemptException(

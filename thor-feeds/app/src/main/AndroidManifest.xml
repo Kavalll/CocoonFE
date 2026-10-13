@@ -8,6 +8,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
+    <queries>
+        <package android:name="ru.zdevs.zarchiver" />
+    </queries>
+
     <application
         android:name=".ThorFeedsApp"
         android:allowBackup="false"

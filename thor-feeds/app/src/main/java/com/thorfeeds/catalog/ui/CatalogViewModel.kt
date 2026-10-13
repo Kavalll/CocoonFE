@@ -2,11 +2,13 @@ package com.thorfeeds.catalog.ui
 
 import android.app.Application
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.thorfeeds.catalog.ThorFeedsApp
 import com.thorfeeds.catalog.download.DownloadService
+import com.thorfeeds.catalog.download.ZArchiverLaunch
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -21,6 +23,7 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val sources = graph.library.sources.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val folderUri = graph.library.folderUri.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val useSecondScreen = graph.library.useSecondScreen.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+    val deleteArchiveAfterExtract = graph.library.deleteArchiveAfterExtract.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val onDeviceKeys = graph.library.onDeviceKeys
     val refreshing = graph.library.refreshing
     val selection = graph.library.selection
@@ -56,6 +59,13 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     fun setFolder(uri: String) = launch { graph.library.setFolder(uri) }
 
     fun setUseSecondScreen(enabled: Boolean) = launch { graph.library.setUseSecondScreen(enabled) }
+
+    fun setDeleteArchiveAfterExtract(enabled: Boolean) = launch { graph.library.setDeleteArchiveAfterExtract(enabled) }
+
+    fun openZArchiver(archiveUri: String, displayName: String) {
+        val opened = ZArchiverLaunch.open(getApplication(), Uri.parse(archiveUri), displayName)
+        if (!opened) messages.tryEmit("ZArchiver is not installed.")
+    }
 
     fun startSolve(sourceId: String, url: String, displayId: Int) {
         graph.library.beginSolve(sourceId, url, displayId)

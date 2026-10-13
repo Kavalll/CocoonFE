@@ -45,7 +45,9 @@ GameHub Lite does not publish a required library layout for manually imported PC
     example-quest.zip
 ```
 
-The file name comes from the host. Archives are not extracted, and GameHub Lite’s private library is not edited. After a download finishes, import the game’s `.exe` from that folder once the archive is extracted, the same way as a manual copy.
+The file name comes from the host. After a zip or rar finishes downloading, Thor Feeds extracts it into that same game folder. If the archive’s only top-level entry is a directory, that one wrapper is removed. GameHub Lite’s private library is not edited. Import the game’s `.exe` from that folder the same way as a manual copy.
+
+In **Feeds**, under **Games folder**, **Remove archive after extracting** is off by default. Turn it on to delete the zip or rar only after the extracted files are present. A failed extract keeps the archive. A rar that cannot be opened in the app can be handed to ZArchiver when that app is installed.
 
 If a top-level file, a non-empty top-level folder, or a file inside a top-level folder already matches the canonical title, the game is marked **On device** and is not downloaded again unless you choose **Download again**. Partial downloads do not count. Matching ignores case, the `Free Download` suffix, and punctuation differences such as `:`.
 

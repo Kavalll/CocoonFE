@@ -52,6 +52,10 @@ class SettingsStore(private val context: Context) {
         prefs[SECOND_SCREEN] ?: true
     }
 
+    val deleteArchiveAfterExtract: Flow<Boolean> = context.feedSettings.data.map { prefs ->
+        prefs[DELETE_ARCHIVE] ?: false
+    }
+
     suspend fun setSources(sources: List<SourceRecord>) {
         context.feedSettings.edit { prefs ->
             prefs[SOURCES] = json.encodeToString(sources)
@@ -66,6 +70,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setUseSecondScreen(enabled: Boolean) {
         context.feedSettings.edit { prefs -> prefs[SECOND_SCREEN] = enabled }
+    }
+
+    suspend fun setDeleteArchiveAfterExtract(enabled: Boolean) {
+        context.feedSettings.edit { prefs -> prefs[DELETE_ARCHIVE] = enabled }
     }
 
     val clearedFeedHosts: Flow<Set<String>> = context.feedSettings.data.map { prefs ->
@@ -89,6 +97,7 @@ class SettingsStore(private val context: Context) {
         private val SOURCES = stringPreferencesKey("sources_json")
         private val FOLDER = stringPreferencesKey("games_folder_uri")
         private val SECOND_SCREEN = booleanPreferencesKey("use_second_screen")
+        private val DELETE_ARCHIVE = booleanPreferencesKey("delete_archive_after_extract")
         private val CLEARED_HOSTS = stringSetPreferencesKey("cleared_feed_hosts")
     }
 }

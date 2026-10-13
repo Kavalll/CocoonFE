@@ -105,6 +105,16 @@ class DownloadService : Service() {
             DownloadPhase.Completed -> state.message ?: "Download complete"
             DownloadPhase.Failed -> state.message ?: "Download failed"
             DownloadPhase.Cancelled -> state.message ?: "Download cancelled"
+            DownloadPhase.Extracting -> {
+                val amount = if (state.totalBytes != null && state.totalBytes > 0) {
+                    "${ByteFormat.format(state.bytesRead)} of ${ByteFormat.format(state.totalBytes)}"
+                } else if (state.bytesRead > 0) {
+                    ByteFormat.format(state.bytesRead)
+                } else {
+                    "Starting"
+                }
+                "Extracting ${state.fileName ?: "archive"} · $amount"
+            }
             else -> {
                 val mirror = "Mirror ${state.mirrorIndex + 1} of ${state.mirrorCount} · ${state.mirrorLabel}"
                 val amount = if (state.totalBytes != null && state.totalBytes > 0) {

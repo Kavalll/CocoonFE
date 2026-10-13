@@ -40,6 +40,7 @@ class LibraryRepository(
     val releases: Flow<List<ReleaseEntity>> = dao.observeAll()
     val folderUri: Flow<String?> = settings.folderUri
     val useSecondScreen: Flow<Boolean> = settings.useSecondScreen
+    val deleteArchiveAfterExtract: Flow<Boolean> = settings.deleteArchiveAfterExtract
     val onDeviceKeys = MutableStateFlow<Set<String>>(emptySet())
     val refreshing = MutableStateFlow(false)
     val selection = MutableStateFlow<String?>(null)
@@ -132,6 +133,12 @@ class LibraryRepository(
     suspend fun setUseSecondScreen(enabled: Boolean) {
         settings.setUseSecondScreen(enabled)
     }
+
+    suspend fun setDeleteArchiveAfterExtract(enabled: Boolean) {
+        settings.setDeleteArchiveAfterExtract(enabled)
+    }
+
+    suspend fun deleteArchiveAfterExtract(): Boolean = settings.deleteArchiveAfterExtract.first()
 
     suspend fun rescan() {
         val uri = settings.folderUri.first()

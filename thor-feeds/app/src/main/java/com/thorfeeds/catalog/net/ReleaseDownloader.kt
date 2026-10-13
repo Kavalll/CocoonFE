@@ -10,7 +10,7 @@ class ReleaseDownloader(
     private val router: MirrorRouter,
     private val fetcher: FileFetcher,
 ) {
-    suspend fun download(uris: List<String>, sink: ByteSink, listener: DownloadListener) {
+    suspend fun download(uris: List<String>, sink: ByteSink, listener: DownloadListener): List<String> {
         val links = uris.map { it.trim() }.filter { it.isNotEmpty() }
         if (links.isEmpty()) {
             throw AttemptException(
@@ -19,6 +19,7 @@ class ReleaseDownloader(
             )
         }
         val failures = mutableListOf<String>()
+        val saved = mutableListOf<String>()
         for ((index, uri) in links.withIndex()) {
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
             if (TransferControl.isCancelled()) throw CancellationException("Download cancelled")
@@ -37,11 +38,12 @@ class ReleaseDownloader(
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     if (TransferControl.isCancelled()) throw CancellationException("Download cancelled")
                     TransferControl.phase = DownloadPhases.CONNECTING
-                    fetcher.fetch(file, sink) { read, total ->
+                    val savedName = fetcher.fetch(file, sink) { read, total ->
                         listener.onProgress(file.fileName, read, total)
                     }
+                    saved += savedName
                 }
-                return
+                return saved
             } catch (cancelled: CancellationException) {
                 val report = AttemptReport.format(
                     host = label,

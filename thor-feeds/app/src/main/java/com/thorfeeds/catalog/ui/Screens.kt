@@ -295,6 +295,7 @@ fun DetailRoute(showBack: Boolean, onBack: () -> Unit, onChooseFolder: () -> Uni
                         onDownload = vm::startDownload,
                         onCancel = vm::cancelDownload,
                         onChooseFolder = onChooseFolder,
+                        onOpenZArchiver = vm::openZArchiver,
                     )
                 }
             }
@@ -313,6 +314,7 @@ private fun ReleaseCard(
     onDownload: (String) -> Unit,
     onCancel: () -> Unit,
     onChooseFolder: () -> Unit,
+    onOpenZArchiver: (String, String) -> Unit,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -323,7 +325,11 @@ private fun ReleaseCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (download != null && !download.terminal) {
-                val mirror = "Mirror ${download.mirrorIndex + 1} of ${download.mirrorCount} · ${download.mirrorLabel}"
+                val mirror = if (download.phase == DownloadPhase.Extracting) {
+                    "Extracting ${download.fileName ?: "archive"}"
+                } else {
+                    "Mirror ${download.mirrorIndex + 1} of ${download.mirrorCount} · ${download.mirrorLabel}"
+                }
                 Text(mirror, fontWeight = FontWeight.Medium)
                 val fraction = download.totalBytes?.takeIf { it > 0 }?.let { total ->
                     (download.bytesRead.toFloat() / total.toFloat()).coerceIn(0f, 1f)
@@ -344,6 +350,11 @@ private fun ReleaseCard(
                         message,
                         emphasize = download.phase == DownloadPhase.Failed || download.phase == DownloadPhase.Cancelled,
                     )
+                }
+                if (download?.offerZArchiver == true && !download.archiveUri.isNullOrBlank()) {
+                    OutlinedButton(onClick = {
+                        onOpenZArchiver(download.archiveUri, download.fileName ?: "archive.rar")
+                    }) { Text("Extract with ZArchiver") }
                 }
                 when {
                     !folderReady -> Button(onClick = onChooseFolder) { Text("Choose a games folder") }
@@ -372,6 +383,7 @@ fun SourcesRoute(
     val vm: CatalogViewModel = viewModel()
     val sources by vm.sources.collectAsStateWithLifecycle()
     val useSecond by vm.useSecondScreen.collectAsStateWithLifecycle()
+    val deleteArchive by vm.deleteArchiveAfterExtract.collectAsStateWithLifecycle()
     val folderLabel by vm.folderLabel.collectAsState()
     val folderProblem by vm.folderProblem.collectAsState()
     var editing by remember { mutableStateOf<SourceRecord?>(null) }
@@ -445,6 +457,18 @@ fun SourcesRoute(
                 folderProblem?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Spacer(Modifier.height(8.dp))
                 OutlinedButton(onClick = onChooseFolder) { Text(if (folderLabel == null) "Choose folder" else "Change folder") }
+            }
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Remove archive after extracting", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Off by default. After a zip or rar extracts into the game folder, delete it only when those files are present. A failed extract keeps the archive.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = deleteArchive, onCheckedChange = vm::setDeleteArchiveAfterExtract)
+                }
             }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
