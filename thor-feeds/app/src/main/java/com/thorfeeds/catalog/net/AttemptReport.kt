@@ -68,11 +68,14 @@ object AttemptReport {
 
     private fun sanitizeDetail(raw: String): String {
         return raw
-            .replace(Regex("""https?://\S+"""), "a link")
             .lineSequence()
-            .joinToString("\n") { it.trim() }
+            .joinToString("\n") { line ->
+                val trimmed = line.trim()
+                if (trimmed.startsWith("URL:") || trimmed.startsWith("Content-Type:")) trimmed
+                else trimmed.replace(Regex("""https?://\S+"""), "a link")
+            }
             .trim()
-            .take(500)
+            .take(800)
     }
 }
 

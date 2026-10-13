@@ -120,6 +120,8 @@ class PageFetcher(private val client: OkHttpClient) {
         val textual = lower.contains("html") ||
             lower.contains("json") ||
             lower.contains("xml") ||
+            lower.contains("javascript") ||
+            lower.contains("ecmascript") ||
             lower.startsWith("text/") ||
             (lower.isBlank() && length in 0..MAX_PAGE_BYTES)
         if (textual) return false

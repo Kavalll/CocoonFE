@@ -82,6 +82,91 @@ class DownloadTest {
         assertEquals("unit-secret", secret)
     }
 
+    @Test
+    fun chunkedJavascriptIsReadAsTheWebsiteTokenScript() {
+        val server = MockWebServer()
+        server.start()
+        val root = server.url("/").toString()
+        val script = """
+            function generateWT(token) {
+              var slot = Math.floor(Date.now() / 1000 / 14400);
+              return _sha256(navigator.userAgent + '::' + navigator.language + '::' + token + '::' + slot + '::' + 'unit-secret');
+            }
+        """.trimIndent()
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "application/javascript").setChunkedBody(script, 24),
+        )
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "text/html").setBody(
+                """<html><script src="/js/wt.obf.js"></script></html>""",
+            ),
+        )
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "application/javascript").setChunkedBody(script, 24),
+        )
+        try {
+            val page = PageFetcher(OkHttpClient()).get(server.url("/js/wt.obf.js").toString())
+            assertFalse(page.isFile)
+            assertTrue(page.body.contains("generateWT"))
+            assertEquals("unit-secret", GofileWtSecret.extract(page.body, timeoutMs = 5_000))
+            val secret = com.thorfeeds.catalog.net.GofileScriptSecret(
+                pages = PageFetcher(OkHttpClient()),
+                website = root,
+            ).secret()
+            assertEquals("unit-secret", secret)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun cloudflareTokenScriptNamesTheUrlAndStatus() {
+        val server = MockWebServer()
+        server.start()
+        val root = server.url("/").toString()
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "text/html").setBody(
+                """<html><script src="/js/wt.obf.js"></script></html>""",
+            ),
+        )
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setHeader("Content-Type", "text/html")
+                .setBody("<html><title>Just a moment...</title><body>cf-challenge</body></html>"),
+        )
+        server.enqueue(MockResponse().setResponseCode(404).setBody(""))
+        try {
+            com.thorfeeds.catalog.net.GofileScriptSecret(
+                pages = PageFetcher(OkHttpClient()),
+                website = root,
+            ).secret()
+            throw AssertionError("A Cloudflare script response should fail the mirror")
+        } catch (error: AttemptException) {
+            assertEquals(DownloadPhases.WEBSITE_TOKEN, error.phase)
+            assertEquals(403, error.httpStatus)
+            assertEquals("cloudflare", error.apiStatus)
+            assertTrue(error.message.orEmpty().contains("Cloudflare"))
+            assertTrue(error.message.orEmpty().contains("/js/wt.obf.js"))
+            assertFalse(error.message.orEmpty().contains("did not load"))
+            assertFalse(error.message.orEmpty().contains("failed to load"))
+            val shown = AttemptReport.format(
+                host = "Gofile",
+                mirrorIndex = 0,
+                mirrorCount = 1,
+                phase = error.phase,
+                httpStatus = error.httpStatus,
+                apiStatus = error.apiStatus,
+                detail = error.message.orEmpty(),
+            )
+            assertTrue(shown.contains("HTTP 403"))
+            assertTrue(shown.contains("URL: http://"))
+            assertFalse(shown.contains("a link"))
+        } finally {
+            server.shutdown()
+        }
+    }
+
     @Test(timeout = 10_000)
     fun websiteTokenScriptCannotHang() {
         try {

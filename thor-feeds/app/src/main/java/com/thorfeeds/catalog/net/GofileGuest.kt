@@ -80,10 +80,12 @@ object GofileWtSecret {
         } catch (_: Exception) {
             return null
         }
-        val websiteHost = URI(website).host?.lowercase().orEmpty()
+        val websiteUri = URI(website)
+        val websiteHost = websiteUri.host?.lowercase().orEmpty()
         val host = scriptUrl.host?.lowercase().orEmpty()
         val onWebsite = host == websiteHost || host.endsWith(".$websiteHost")
-        if (!scriptUrl.scheme.equals("https", ignoreCase = true) || !onWebsite) return null
+        val scheme = websiteUri.scheme ?: "https"
+        if (!scriptUrl.scheme.equals(scheme, ignoreCase = true) || !onWebsite) return null
         return scriptUrl.toString()
     }
 
@@ -140,7 +142,7 @@ object GofileWtSecret {
             context.evaluateString(scope, SANDBOX, "gofile-wt-setup", 1, null)
             context.evaluateString(scope, script, "gofile-wt", 1, null)
             if (scope.get("generateWT", scope) == Scriptable.NOT_FOUND) {
-                throw MirrorException("Gofile token script did not load")
+                throw MirrorException("Gofile website token script did not define a generator")
             }
             context.evaluateString(scope, PROBE, "gofile-wt-probe", 1, null)
             val raw = scope.get("__raw", scope)?.toString().orEmpty()
@@ -166,7 +168,7 @@ object GofileWtSecret {
         return when (cause) {
             null -> AttemptException(
                 phase = DownloadPhases.WEBSITE_TOKEN,
-                message = "Gofile token script did not load, so this mirror was skipped.",
+                message = "Gofile website token script did not define a generator, so this mirror was skipped.",
             )
             is AttemptException, is CancellationException -> cause
             is MirrorException -> AttemptException(
@@ -216,6 +218,7 @@ object GofileWtSecret {
 class GofileScriptSecret(
     private val pages: PageFetcher,
     private val callTimeoutMs: Long = GofileResolver.CALL_TIMEOUT_MS,
+    private val website: String = "https://gofile.io/",
 ) {
     @Volatile private var cached: String? = null
 
@@ -224,21 +227,33 @@ class GofileScriptSecret(
         synchronized(this) {
             cached?.let { return it }
             TransferControl.phase = DownloadPhases.WEBSITE_TOKEN
+            val homeUrl = website
+            var last: Exception? = null
             val discovered = try {
                 val home = pages.get(
-                    "https://gofile.io/",
-                    mapOf("User-Agent" to GofileWebsiteToken.USER_AGENT, "Accept" to "text/html"),
+                    homeUrl,
+                    mapOf(
+                        "User-Agent" to GofileWebsiteToken.USER_AGENT,
+                        "Accept" to "text/html,application/xhtml+xml",
+                    ),
                     timeoutMs = callTimeoutMs,
                     phase = DownloadPhases.WEBSITE_TOKEN,
                 )
-                if (home.code in 200..299) GofileWtSecret.scriptUrlFromHomepage(home.body) else null
+                val challenged = home.code !in 200..299 ||
+                    com.thorfeeds.catalog.core.FeedText.isCloudflareInterstitial(home.body)
+                if (challenged) {
+                    last = scriptFailure(homeUrl, home)
+                    null
+                } else {
+                    GofileWtSecret.scriptUrlFromHomepage(home.body, homeUrl)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                last = explainScriptError(homeUrl, error)
                 null
             }
-            val urls = (listOfNotNull(discovered) + GofileWtSecret.fallbackScriptUrls()).distinct()
-            var last: Exception? = null
+            val urls = (listOfNotNull(discovered) + GofileWtSecret.fallbackScriptUrls(homeUrl)).distinct()
             for (url in urls) {
                 if (TransferControl.isCancelled()) throw CancellationException("Download cancelled")
                 try {
@@ -247,36 +262,101 @@ class GofileScriptSecret(
                         mapOf(
                             "User-Agent" to GofileWebsiteToken.USER_AGENT,
                             "Accept" to "application/javascript, text/javascript, */*;q=0.8",
-                            "Referer" to "https://gofile.io/",
+                            "Referer" to homeUrl,
                         ),
                         timeoutMs = callTimeoutMs,
                         phase = DownloadPhases.WEBSITE_TOKEN,
                     )
-                    if (body.code !in 200..299 || body.body.trimStart().startsWith("<")) continue
+                    val rejected = scriptFailure(url, body)
+                    if (rejected != null) {
+                        last = preferScriptFailure(last, rejected)
+                        continue
+                    }
                     val secret = GofileWtSecret.extract(body.body, callTimeoutMs)
                     cached = secret
                     return secret
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    last = error
+                    last = preferScriptFailure(last, explainScriptError(url, error))
                 }
             }
             val failure = last
-            if (failure is AttemptException) throw failure.withMessage(websiteMessage(failure))
+            if (failure is AttemptException) throw failure
             throw AttemptException(
                 phase = DownloadPhases.WEBSITE_TOKEN,
-                message = "Gofile website token could not be loaded, so this mirror was skipped.",
+                message = "Gofile website token could not be loaded, so this mirror was skipped.\nURL: $homeUrl",
             )
         }
     }
 
-    private fun websiteMessage(error: AttemptException): String {
-        return when (error.apiStatus) {
-            "timeout" -> "Gofile website token request timed out, so this mirror was skipped."
-            "connection" -> "Gofile website token connection dropped, so this mirror was skipped."
-            else -> error.message ?: "Gofile website token could not be loaded, so this mirror was skipped."
+    private fun explainScriptError(url: String, error: Exception): Exception {
+        if (error is AttemptException && isBareLoadMessage(error.message)) {
+            return AttemptException(
+                phase = DownloadPhases.WEBSITE_TOKEN,
+                httpStatus = error.httpStatus,
+                apiStatus = error.apiStatus,
+                message = "Gofile website token script did not define a generator, so this mirror was skipped.\nURL: $url",
+            )
         }
+        if (error is AttemptException) {
+            val message = error.message.orEmpty()
+            val withUrl = if (message.contains("URL:")) message else "$message\nURL: $url"
+            return error.withMessage(withUrl)
+        }
+        val text = error.message.orEmpty()
+        if (isBareLoadMessage(text)) {
+            return AttemptException(
+                phase = DownloadPhases.WEBSITE_TOKEN,
+                message = "Gofile website token script did not define a generator, so this mirror was skipped.\nURL: $url",
+            )
+        }
+        return AttemptException(
+            phase = DownloadPhases.WEBSITE_TOKEN,
+            message = (text.ifBlank { "Gofile website token script could not be read, so this mirror was skipped." }) + "\nURL: $url",
+        )
+    }
+
+    private fun scriptFailure(url: String, page: PageBody): AttemptException? {
+        val body = page.body.trimStart('\uFEFF').trimStart()
+        val cloudflare = com.thorfeeds.catalog.core.FeedText.isCloudflareInterstitial(page.body)
+        val html = body.startsWith("<")
+        val failed = page.code !in 200..299
+        val empty = body.isEmpty() || page.isFile
+        if (!cloudflare && !html && !failed && !empty) return null
+        val why = when {
+            cloudflare -> "Gofile returned a Cloudflare check page instead of the website token script, so this mirror was skipped."
+            html -> "Gofile returned HTML instead of the website token script, so this mirror was skipped."
+            failed -> "Gofile website token script request failed, so this mirror was skipped."
+            else -> "Gofile website token script body was empty, so this mirror was skipped."
+        }
+        val type = page.contentType?.takeIf { it.isNotBlank() }?.let { "\nContent-Type: $it" }.orEmpty()
+        return AttemptException(
+            phase = DownloadPhases.WEBSITE_TOKEN,
+            httpStatus = page.code,
+            apiStatus = if (cloudflare) "cloudflare" else null,
+            message = "$why\nURL: $url$type",
+        )
+    }
+
+    private fun preferScriptFailure(current: Exception?, next: Exception): Exception {
+        if (current == null) return next
+        return if (scriptFailureRank(next.message) >= scriptFailureRank(current.message)) next else current
+    }
+
+    private fun scriptFailureRank(message: String?): Int {
+        val text = message.orEmpty()
+        return when {
+            "Cloudflare" in text -> 3
+            "HTML" in text -> 2
+            "did not define" in text -> 2
+            else -> 1
+        }
+    }
+
+    private fun isBareLoadMessage(message: String?): Boolean {
+        val text = message.orEmpty()
+        return "token script did not load" in text || "token script failed to load" in text
     }
 }
 
