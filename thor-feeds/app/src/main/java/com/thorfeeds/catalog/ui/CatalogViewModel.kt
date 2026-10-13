@@ -7,6 +7,10 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.thorfeeds.catalog.ThorFeedsApp
+import com.thorfeeds.catalog.core.CatalogArt
+import com.thorfeeds.catalog.core.CatalogRow
+import com.thorfeeds.catalog.core.CatalogSort
+import com.thorfeeds.catalog.core.TitleCanonicalizer
 import com.thorfeeds.catalog.download.DownloadService
 import com.thorfeeds.catalog.download.ZArchiverLaunch
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -24,6 +28,9 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val folderUri = graph.library.folderUri.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val useSecondScreen = graph.library.useSecondScreen.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
     val deleteArchiveAfterExtract = graph.library.deleteArchiveAfterExtract.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val catalogSort = graph.library.catalogSort.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CatalogSort.NEWEST)
+    val artByTitle = MutableStateFlow<Map<String, CatalogArt>>(emptyMap())
+    private val artRequested = mutableSetOf<String>()
     val onDeviceKeys = graph.library.onDeviceKeys
     val onDeviceArchives = graph.library.onDeviceArchives
     val refreshing = graph.library.refreshing
@@ -34,11 +41,32 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val solveSession = graph.library.solveSession
     val query = MutableStateFlow("")
 
+    init {
+        viewModelScope.launch {
+            artByTitle.value = graph.steamArt.cached()
+            graph.library.restoreSelection()
+        }
+    }
+
     private val messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val userMessages = messages.asSharedFlow()
 
     fun setQuery(value: String) {
         query.value = value
+    }
+
+    fun setCatalogSort(sort: CatalogSort) = launch { graph.library.setCatalogSort(sort) }
+
+    fun ensureArt(rows: List<CatalogRow>) {
+        val requests = rows.map { TitleCanonicalizer.identityKey(it.canonicalTitle) to it.canonicalTitle }
+            .distinctBy { it.first }
+            .filter { (key, _) -> key !in artByTitle.value && artRequested.add(key) }
+        if (requests.isEmpty()) return
+        viewModelScope.launch {
+            graph.steamArt.resolve(requests) { key, art ->
+                artByTitle.value = artByTitle.value + (key to art)
+            }
+        }
     }
 
     fun refresh() = launch { graph.library.refreshAll() }
@@ -47,6 +75,7 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
 
     fun select(canonicalTitle: String) {
         graph.library.select(canonicalTitle)
+        launch { graph.library.persistSelection(canonicalTitle) }
     }
 
     fun addRemote(url: String) = launch { graph.library.addRemote(url) }

@@ -10,7 +10,11 @@ import com.thorfeeds.catalog.download.DownloadController
 import com.thorfeeds.catalog.net.OkHttpFileFetcher
 import com.thorfeeds.catalog.net.RealMirrorRouter
 import com.thorfeeds.catalog.net.ReleaseDownloader
+import com.thorfeeds.catalog.data.SteamArtRepository
+import com.thorfeeds.catalog.net.HttpIdentity
 import com.thorfeeds.catalog.webview.WebFeedGate
+import coil.ImageLoader
+import coil.ImageLoaderFactory
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -37,6 +41,16 @@ class AppGraph(context: Context) {
         http = http,
         webFeeds = webFeeds,
     )
+    val steamArt = SteamArtRepository(appContext.filesDir, http)
+    val imageHttp: OkHttpClient = http.newBuilder()
+        .addInterceptor { chain ->
+            chain.proceed(
+                chain.request().newBuilder()
+                    .header("User-Agent", HttpIdentity.FEED_BROWSER_USER_AGENT)
+                    .build(),
+            )
+        }
+        .build()
     val downloads = DownloadController(
         context = appContext,
         library = library,
@@ -44,13 +58,19 @@ class AppGraph(context: Context) {
     )
 }
 
-class ThorFeedsApp : Application() {
+class ThorFeedsApp : Application(), ImageLoaderFactory {
     lateinit var graph: AppGraph
         private set
 
     override fun onCreate() {
         super.onCreate()
         graph = AppGraph(this)
+    }
+
+    override fun newImageLoader(): ImageLoader {
+        val builder = ImageLoader.Builder(this).crossfade(true)
+        if (::graph.isInitialized) builder.okHttpClient(graph.imageHttp)
+        return builder.build()
     }
 
     companion object {

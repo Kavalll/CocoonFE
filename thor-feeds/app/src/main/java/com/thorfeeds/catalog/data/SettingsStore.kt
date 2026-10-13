@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import com.thorfeeds.catalog.core.CatalogSort
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -56,6 +57,14 @@ class SettingsStore(private val context: Context) {
         prefs[DELETE_ARCHIVE] ?: false
     }
 
+    val catalogSort: Flow<CatalogSort> = context.feedSettings.data.map { prefs ->
+        CatalogSort.fromStored(prefs[CATALOG_SORT])
+    }
+
+    val selectedTitle: Flow<String?> = context.feedSettings.data.map { prefs ->
+        prefs[SELECTED_TITLE]?.takeIf { it.isNotBlank() }
+    }
+
     suspend fun setSources(sources: List<SourceRecord>) {
         context.feedSettings.edit { prefs ->
             prefs[SOURCES] = json.encodeToString(sources)
@@ -74,6 +83,16 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setDeleteArchiveAfterExtract(enabled: Boolean) {
         context.feedSettings.edit { prefs -> prefs[DELETE_ARCHIVE] = enabled }
+    }
+
+    suspend fun setCatalogSort(sort: CatalogSort) {
+        context.feedSettings.edit { prefs -> prefs[CATALOG_SORT] = sort.name }
+    }
+
+    suspend fun setSelectedTitle(title: String?) {
+        context.feedSettings.edit { prefs ->
+            if (title.isNullOrBlank()) prefs.remove(SELECTED_TITLE) else prefs[SELECTED_TITLE] = title
+        }
     }
 
     val clearedFeedHosts: Flow<Set<String>> = context.feedSettings.data.map { prefs ->
@@ -98,6 +117,8 @@ class SettingsStore(private val context: Context) {
         private val FOLDER = stringPreferencesKey("games_folder_uri")
         private val SECOND_SCREEN = booleanPreferencesKey("use_second_screen")
         private val DELETE_ARCHIVE = booleanPreferencesKey("delete_archive_after_extract")
+        private val CATALOG_SORT = stringPreferencesKey("catalog_sort")
+        private val SELECTED_TITLE = stringPreferencesKey("selected_title")
         private val CLEARED_HOSTS = stringSetPreferencesKey("cleared_feed_hosts")
     }
 }

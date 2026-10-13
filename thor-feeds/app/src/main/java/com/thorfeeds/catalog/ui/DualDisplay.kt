@@ -35,14 +35,19 @@ class DualDisplayController(
     private val manager = activity.getSystemService(DisplayManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
     private var presentation: Presentation? = null
+    private var stopped = false
+    private val reopenLater = Runnable {
+        if (!DisplaySignals.userClosedDetail) sync()
+    }
 
     fun attach() {
         manager.registerDisplayListener(this, handler)
         activity.lifecycle.addObserver(this)
-        sync()
+        reopenForResume()
     }
 
     fun detach() {
+        handler.removeCallbacks(reopenLater)
         manager.unregisterDisplayListener(this)
         activity.lifecycle.removeObserver(this)
         dismissPresentation()
@@ -53,8 +58,25 @@ class DualDisplayController(
         sync()
     }
 
-    override fun onStart(owner: LifecycleOwner) {
+    fun reopenForResume() {
+        DisplaySignals.userClosedDetail = false
         sync()
+        handler.removeCallbacks(reopenLater)
+        handler.postDelayed(reopenLater, 400)
+    }
+
+    override fun onStart(owner: LifecycleOwner) {
+        if (stopped) {
+            stopped = false
+            DisplaySignals.userClosedDetail = false
+        }
+        sync()
+        handler.removeCallbacks(reopenLater)
+        handler.postDelayed(reopenLater, 400)
+    }
+
+    override fun onStop(owner: LifecycleOwner) {
+        stopped = true
     }
 
     override fun onDisplayAdded(displayId: Int) = sync()

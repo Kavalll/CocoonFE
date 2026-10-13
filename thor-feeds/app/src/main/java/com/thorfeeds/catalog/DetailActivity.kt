@@ -2,6 +2,7 @@ package com.thorfeeds.catalog
 
 import android.os.Bundle
 import android.view.Display
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -40,6 +41,15 @@ class DetailActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_B) {
+            DisplaySignals.userClosedDetail = true
+            finish()
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
     }
 
     override fun onStart() {

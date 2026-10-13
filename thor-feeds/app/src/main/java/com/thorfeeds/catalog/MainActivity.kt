@@ -31,6 +31,7 @@ import androidx.navigation.compose.rememberNavController
 import com.thorfeeds.catalog.ThorFeedsApp
 import com.thorfeeds.catalog.data.FolderScanner
 import android.view.Display
+import android.view.KeyEvent
 import com.thorfeeds.catalog.ui.CatalogRoute
 import com.thorfeeds.catalog.ui.FeedSolveHost
 import com.thorfeeds.catalog.ui.CatalogViewModel
@@ -41,6 +42,19 @@ import com.thorfeeds.catalog.ui.SourcesRoute
 import com.thorfeeds.catalog.ui.ThorFeedsTheme
 
 class MainActivity : ComponentActivity() {
+    private var onGamepadBack: (() -> Boolean)? = null
+
+    fun setGamepadBack(handler: (() -> Boolean)?) {
+        onGamepadBack = handler
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BUTTON_B && event.action == KeyEvent.ACTION_UP) {
+            if (onGamepadBack?.invoke() == true) return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onDestroy() {
         ThorFeedsApp.graph(this).webFeeds.unbind(this)
         super.onDestroy()
@@ -68,6 +82,10 @@ class MainActivity : ComponentActivity() {
                 DisposableEffect(controller) {
                     controller.attach()
                     onDispose { controller.detach() }
+                }
+                DisposableEffect(nav) {
+                    setGamepadBack { nav.popBackStack() }
+                    onDispose { setGamepadBack(null) }
                 }
                 LaunchedEffect(useSecond, preferPresentation) {
                     controller.sync()

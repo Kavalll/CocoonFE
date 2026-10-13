@@ -7,6 +7,7 @@ import com.thorfeeds.catalog.core.FeedFormatException
 import com.thorfeeds.catalog.core.FeedParser
 import com.thorfeeds.catalog.core.FeedUrls
 import com.thorfeeds.catalog.core.FeedWebReader
+import com.thorfeeds.catalog.core.CatalogSort
 import com.thorfeeds.catalog.core.GameArchiveIndex
 import com.thorfeeds.catalog.core.LocatedArchive
 import com.thorfeeds.catalog.core.OnDeviceMatcher
@@ -44,6 +45,7 @@ class LibraryRepository(
     val folderUri: Flow<String?> = settings.folderUri
     val useSecondScreen: Flow<Boolean> = settings.useSecondScreen
     val deleteArchiveAfterExtract: Flow<Boolean> = settings.deleteArchiveAfterExtract
+    val catalogSort: Flow<CatalogSort> = settings.catalogSort
     val onDeviceKeys = MutableStateFlow<Set<String>>(emptySet())
     val onDeviceArchives = MutableStateFlow<Map<String, List<LocatedArchive>>>(emptyMap())
     val refreshing = MutableStateFlow(false)
@@ -54,6 +56,16 @@ class LibraryRepository(
 
     fun select(canonicalTitle: String) {
         selection.value = canonicalTitle
+    }
+
+    suspend fun persistSelection(title: String?) {
+        settings.setSelectedTitle(title)
+    }
+
+    suspend fun restoreSelection() {
+        if (!selection.value.isNullOrBlank()) return
+        val saved = settings.selectedTitle.first()
+        if (!saved.isNullOrBlank()) selection.value = saved
     }
 
     suspend fun refreshAll() {
@@ -124,7 +136,10 @@ class LibraryRepository(
         dao.deleteFeed(id)
         if (selection.value != null) {
             val stillThere = dao.canonicalTitles().any { it.equals(selection.value, ignoreCase = true) }
-            if (!stillThere) selection.value = null
+            if (!stillThere) {
+                selection.value = null
+                settings.setSelectedTitle(null)
+            }
         }
         rescan()
     }
@@ -140,6 +155,10 @@ class LibraryRepository(
 
     suspend fun setDeleteArchiveAfterExtract(enabled: Boolean) {
         settings.setDeleteArchiveAfterExtract(enabled)
+    }
+
+    suspend fun setCatalogSort(sort: CatalogSort) {
+        settings.setCatalogSort(sort)
     }
 
     suspend fun deleteArchiveAfterExtract(): Boolean = settings.deleteArchiveAfterExtract.first()

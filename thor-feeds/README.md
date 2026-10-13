@@ -57,9 +57,11 @@ If a top-level file, a non-empty top-level folder, or a file inside a top-level 
 
 When a second display is on and **Use the other screen** is enabled (the default):
 
-- The catalog stays on the display where you opened Thor Feeds.
-- The selected game, older builds, and download progress open on the other display.
-- Closing that screen leaves it closed until you pick a game again.
+- Opening or resuming Thor Feeds shows the catalog on the display where it was opened and the game screen on the other display, even if that screen was closed before leaving the app.
+- If no game is selected yet, the other display waits with an empty detail state. The last selected game is restored when there is one.
+- The catalog can be sorted by newest, name, size, or popularity. Popularity is Steam’s public recommendation count for an exact title match. Art uses the public Steam library capsule and is cached on the device. An ambiguous name is left without art.
+
+With a gamepad, the D-pad moves focus and A confirms. B goes back. Focusing a catalog card opens that game on the other display.
 
 With one display, the catalog and the detail screen are normal in-app pages.
 

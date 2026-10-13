@@ -3,7 +3,12 @@ package com.thorfeeds.catalog.ui
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -35,6 +40,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -52,6 +58,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.background
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -60,6 +67,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -67,8 +78,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.thorfeeds.catalog.core.ByteFormat
+import com.thorfeeds.catalog.core.CatalogArt
 import com.thorfeeds.catalog.core.CatalogDeduper
+import com.thorfeeds.catalog.core.CatalogOrder
+import com.thorfeeds.catalog.core.CatalogSort
 import com.thorfeeds.catalog.core.CatalogRow
 import com.thorfeeds.catalog.core.ParsedRelease
 import com.thorfeeds.catalog.core.LocatedArchive
@@ -102,10 +117,6 @@ fun CatalogRoute(
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { vm.userMessages.collect { snackbar.showSnackbar(it) } }
 
-    val rows = remember(entities, query) {
-        CatalogDeduper.rows(entities.map { it.toParsed() })
-            .filter { CatalogDeduper.matchesQuery(it, query) }
-    }
     val errors = sources.mapNotNull { source ->
         source.lastError?.let { error -> "${source.label}: $error" }
     }
@@ -130,9 +141,6 @@ fun CatalogRoute(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (refreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
-            if (dualScreen) {
-                Banner("Second screen connected. Details and downloads stay on the other display.")
-            }
             if (folderUri == null) {
                 Banner("Choose the games folder GameHub Lite already uses. Downloads go there.")
                 FilledTonalButton(onClick = onChooseFolder, modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -155,6 +163,20 @@ fun CatalogRoute(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 ) { Text("Solve check · ${source.label}") }
             }
+            val sort by vm.catalogSort.collectAsStateWithLifecycle()
+            val artByTitle by vm.artByTitle.collectAsState()
+            val allRows = remember(entities) { CatalogDeduper.rows(entities.map { it.toParsed() }) }
+            val popularity = remember(artByTitle) {
+                artByTitle.mapNotNull { (key, art) -> art.popularity?.let { key to it } }.toMap()
+            }
+            val rows = remember(allRows, query, sort, popularity) {
+                CatalogOrder.sort(
+                    allRows.filter { CatalogDeduper.matchesQuery(it, query) },
+                    sort,
+                    popularity,
+                )
+            }
+            LaunchedEffect(allRows) { vm.ensureArt(allRows) }
             OutlinedTextField(
                 value = query,
                 onValueChange = vm::setQuery,
@@ -163,6 +185,18 @@ fun CatalogRoute(
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 placeholder = { Text("Search titles") },
             )
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                CatalogSort.entries.forEach { option ->
+                    FilterChip(
+                        selected = sort == option,
+                        onClick = { vm.setCatalogSort(option) },
+                        label = { Text(sortLabel(option)) },
+                    )
+                }
+            }
             when {
                 sources.isEmpty() && !refreshing -> EmptyCatalog(
                     title = "No feeds yet",
@@ -196,10 +230,24 @@ fun CatalogRoute(
                         val active = download?.releaseId != null &&
                             row.all.any { it.id == download?.releaseId } &&
                             download?.terminal == false
-                        CatalogCard(row, present, active) {
-                            vm.select(row.canonicalTitle)
-                            onOpenDetail()
-                        }
+                        CatalogCard(
+                            row = row,
+                            art = artByTitle[TitleCanonicalizer.identityKey(row.canonicalTitle)],
+                            onDevice = present,
+                            downloading = active,
+                            onClick = {
+                                vm.select(row.canonicalTitle)
+                                onOpenDetail()
+                            },
+                            onFocused = if (dualScreen) {
+                                {
+                                    vm.select(row.canonicalTitle)
+                                    onOpenDetail()
+                                }
+                            } else {
+                                null
+                            },
+                        )
                     }
                 }
             }
@@ -208,32 +256,89 @@ fun CatalogRoute(
 }
 
 @Composable
-private fun CatalogCard(row: CatalogRow, onDevice: Boolean, downloading: Boolean, onClick: () -> Unit) {
+private fun CatalogCard(
+    row: CatalogRow,
+    art: CatalogArt?,
+    onDevice: Boolean,
+    downloading: Boolean,
+    onClick: () -> Unit,
+    onFocused: (() -> Unit)?,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val focused by interaction.collectIsFocusedAsState()
     Card(
         onClick = onClick,
+        interactionSource = interaction,
+        border = if (focused) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.onFocusChanged { state ->
+            if (state.isFocused) onFocused?.invoke()
+        },
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp)) {
-            Text(row.canonicalTitle, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(4.dp))
-            Text(
-                listOf(
-                    row.latest.fileSizeLabel,
-                    UploadDates.format(row.latest.uploadDate),
-                    if (row.older.isEmpty()) "1 build" else "${row.all.size} builds",
-                ).joinToString(" · "),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (onDevice || downloading) {
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (onDevice) Badge("On device")
-                    if (downloading) Badge("Downloading")
+        Row(Modifier.fillMaxWidth()) {
+            GameArt(title = row.canonicalTitle, art = art, modifier = Modifier.width(84.dp).height(126.dp))
+            Column(Modifier.weight(1f).padding(14.dp)) {
+                Text(row.canonicalTitle, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    listOf(
+                        row.latest.fileSizeLabel,
+                        UploadDates.format(row.latest.uploadDate),
+                        if (row.older.isEmpty()) "1 build" else "${row.all.size} builds",
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (onDevice || downloading) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (onDevice) Badge("On device")
+                        if (downloading) Badge("Downloading")
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun GameArt(title: String, art: CatalogArt?, modifier: Modifier) {
+    Box(modifier.clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))) {
+        ArtPlaceholder(title, Modifier.matchParentSize())
+        val url = art?.capsuleUrl
+        if (url != null) {
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                modifier = Modifier.matchParentSize(),
+                contentScale = ContentScale.Crop,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ArtPlaceholder(title: String, modifier: Modifier) {
+    Box(
+        modifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = title.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "·",
+            style = MaterialTheme.typography.headlineSmall,
+            color = MaterialTheme.colorScheme.secondary,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+private fun sortLabel(sort: CatalogSort): String {
+    return when (sort) {
+        CatalogSort.NEWEST -> "Newest"
+        CatalogSort.NAME -> "Name"
+        CatalogSort.SIZE -> "Size"
+        CatalogSort.POPULARITY -> "Popularity"
     }
 }
 
@@ -250,6 +355,7 @@ fun DetailRoute(showBack: Boolean, onBack: () -> Unit, onChooseFolder: () -> Uni
     val rows = remember(entities) { CatalogDeduper.rows(entities.map { it.toParsed() }) }
     val row = rows.firstOrNull { TitleCanonicalizer.identityKey(it.canonicalTitle) == selection?.let(TitleCanonicalizer::identityKey) }
     val present = row != null && TitleCanonicalizer.identityKey(row.canonicalTitle) in onDevice
+    val deleteArchive by vm.deleteArchiveAfterExtract.collectAsStateWithLifecycle()
     val archives = row?.let { archivesByGame[TitleCanonicalizer.identityKey(it.canonicalTitle)].orEmpty() }.orEmpty()
 
     Scaffold(
@@ -305,6 +411,8 @@ fun DetailRoute(showBack: Boolean, onBack: () -> Unit, onChooseFolder: () -> Uni
                         } else {
                             null
                         },
+                        deleteArchive = deleteArchive,
+                        onDeleteArchive = vm::setDeleteArchiveAfterExtract,
                     )
                 }
             }
@@ -326,6 +434,8 @@ private fun ReleaseCard(
     onOpenZArchiver: (String, String) -> Unit,
     archives: List<LocatedArchive> = emptyList(),
     onExtract: (() -> Unit)? = null,
+    deleteArchive: Boolean = false,
+    onDeleteArchive: (Boolean) -> Unit = {},
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -372,7 +482,16 @@ private fun ReleaseCard(
                         archiveCaption(archives),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    OutlinedButton(onClick = onExtract, enabled = folderReady) { Text("Extract") }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = onExtract, enabled = folderReady) { Text("Extract") }
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            "Remove archive",
+                            modifier = Modifier.weight(1f),
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Switch(checked = deleteArchive, onCheckedChange = onDeleteArchive)
+                    }
                 }
                 when {
                     !folderReady -> Button(onClick = onChooseFolder) { Text("Choose a games folder") }
