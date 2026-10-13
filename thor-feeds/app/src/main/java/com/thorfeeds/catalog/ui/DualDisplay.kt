@@ -10,6 +10,8 @@ import android.os.Looper
 import android.view.Display
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -21,10 +23,13 @@ import com.thorfeeds.catalog.DetailActivity
 import com.thorfeeds.catalog.core.DisplayChoice
 import kotlinx.coroutines.flow.MutableStateFlow
 
+enum class SecondaryPage { Game, Downloads }
+
 object DisplaySignals {
     var userClosedDetail: Boolean = false
     val preferPresentation = MutableStateFlow(false)
     val detailRunning = MutableStateFlow(false)
+    val secondaryPage = MutableStateFlow(SecondaryPage.Game)
 }
 
 class DualDisplayController(
@@ -165,10 +170,17 @@ class DetailPresentation(
             setViewTreeSavedStateRegistryOwner(host)
             setContent {
                 ThorFeedsTheme {
-                    DetailRoute(showBack = true, onBack = {
-                        onClose()
-                        dismiss()
-                    })
+                    val page by DisplaySignals.secondaryPage.collectAsState()
+                    if (page == SecondaryPage.Downloads) {
+                        DownloadsRoute(showBack = true, onBack = {
+                            DisplaySignals.secondaryPage.value = SecondaryPage.Game
+                        })
+                    } else {
+                        DetailRoute(showBack = true, onBack = {
+                            onClose()
+                            dismiss()
+                        })
+                    }
                 }
             }
         }

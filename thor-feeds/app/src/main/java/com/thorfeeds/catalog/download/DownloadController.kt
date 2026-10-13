@@ -28,6 +28,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.io.File
 
 enum class DownloadPhase {
     Connecting,
@@ -36,6 +38,7 @@ enum class DownloadPhase {
     Completed,
     Failed,
     Cancelled,
+    Interrupted,
 }
 
 data class DownloadSnapshot(
@@ -53,7 +56,8 @@ data class DownloadSnapshot(
     val offerZArchiver: Boolean = false,
 ) {
     val terminal: Boolean
-        get() = phase == DownloadPhase.Completed || phase == DownloadPhase.Failed || phase == DownloadPhase.Cancelled
+        get() = phase == DownloadPhase.Completed || phase == DownloadPhase.Failed ||
+            phase == DownloadPhase.Cancelled || phase == DownloadPhase.Interrupted
 }
 
 class DownloadController(
@@ -62,14 +66,33 @@ class DownloadController(
     private val downloader: ReleaseDownloader,
 ) {
     val snapshot = MutableStateFlow<DownloadSnapshot?>(null)
+    val records = MutableStateFlow<List<DownloadRecord>>(emptyList())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val history = DownloadHistoryStore(File(context.filesDir, "downloads.json"))
     private var job: Job? = null
+    private var activeKind = DownloadRecord.KIND_DOWNLOAD
+    private var lastPersist = 0L
+
+    init {
+        scope.launch {
+            val restored = history.read().map { record ->
+                val resume = record.kind == DownloadRecord.KIND_DOWNLOAD && acceptsResume(record.canonicalTitle, record.fileName)
+                DownloadHistoryRules.interrupt(record, resume)
+            }
+            history.write(restored)
+            records.value = restored
+            snapshot.collect { snap ->
+                if (snap != null) remember(snap)
+            }
+        }
+    }
 
     fun isRunning(): Boolean = job?.isActive == true
 
     fun start(releaseId: String) {
         synchronized(this) {
             if (job?.isActive == true) return
+            activeKind = DownloadRecord.KIND_DOWNLOAD
             TransferControl.reset()
             job = scope.launch { run(releaseId) }
         }
@@ -78,8 +101,21 @@ class DownloadController(
     fun extractExisting(releaseId: String) {
         synchronized(this) {
             if (job?.isActive == true) return
+            activeKind = DownloadRecord.KIND_EXTRACT
             TransferControl.reset()
             job = scope.launch { runExtract(releaseId) }
+        }
+    }
+
+    fun deleteDownload(releaseId: String) {
+        scope.launch {
+            if (job?.isActive == true && snapshot.value?.releaseId == releaseId) return@launch
+            val record = records.value.firstOrNull { it.releaseId == releaseId } ?: return@launch
+            deleteFiles(record)
+            val next = records.value.filterNot { it.releaseId == releaseId }
+            records.value = next
+            history.write(next)
+            if (snapshot.value?.releaseId == releaseId) snapshot.value = null
         }
     }
 
@@ -473,6 +509,62 @@ class DownloadController(
         val document: androidx.documentfile.provider.DocumentFile,
         val outputDir: androidx.documentfile.provider.DocumentFile,
     )
+
+    private suspend fun remember(snap: DownloadSnapshot) {
+        val resume = snap.fileName?.let { acceptsResume(snap.canonicalTitle, it) } ?: false
+        val record = DownloadRecord(
+            releaseId = snap.releaseId,
+            canonicalTitle = snap.canonicalTitle,
+            phase = snap.phase.name,
+            bytesRead = snap.bytesRead,
+            totalBytes = snap.totalBytes,
+            fileName = snap.fileName,
+            message = snap.message,
+            mirrorLabel = snap.mirrorLabel,
+            mirrorIndex = snap.mirrorIndex,
+            mirrorCount = snap.mirrorCount,
+            updatedAt = System.currentTimeMillis(),
+            acceptsResume = resume,
+            kind = activeKind,
+            offerZArchiver = snap.offerZArchiver,
+            archiveUri = snap.archiveUri,
+        )
+        val next = listOf(record) + records.value.filterNot { it.releaseId == record.releaseId }
+        records.value = next
+        val now = record.updatedAt
+        if (snap.terminal || now - lastPersist > 1500) {
+            lastPersist = now
+            history.write(next)
+        }
+    }
+
+    private suspend fun acceptsResume(canonicalTitle: String, fileName: String?): Boolean {
+        if (fileName.isNullOrBlank()) return false
+        val folder = library.currentFolder() ?: return false
+        val tree = DocumentFile.fromTreeUri(context, Uri.parse(folder)) ?: return false
+        val dir = tree.listFiles().firstOrNull { it.isDirectory && it.name.equals(Names.sanitizeFolder(canonicalTitle), true) }
+            ?: return false
+        val meta = dir.findFile("$fileName.partial.meta") ?: return false
+        val text = context.contentResolver.openInputStream(meta.uri)?.use { it.readBytes().toString(Charsets.UTF_8) } ?: return false
+        return try {
+            JSONObject(text).optBoolean("acceptsRange")
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private suspend fun deleteFiles(record: DownloadRecord) {
+        val name = record.fileName ?: return
+        val folder = library.currentFolder() ?: return
+        val tree = DocumentFile.fromTreeUri(context, Uri.parse(folder)) ?: return
+        val dirs = tree.listFiles().filter { it.isDirectory && it.name.equals(Names.sanitizeFolder(record.canonicalTitle), true) }
+        val targets = dirs.ifEmpty { listOf(tree) }
+        for (dir in targets) {
+            dir.findFile(name)?.delete()
+            dir.findFile("$name.partial")?.delete()
+            dir.findFile("$name.partial.meta")?.delete()
+        }
+    }
 
     private fun failed(releaseId: String, title: String, phase: String, detail: String): DownloadSnapshot {
         return DownloadSnapshot(

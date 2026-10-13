@@ -36,6 +36,8 @@ import com.thorfeeds.catalog.ui.CatalogRoute
 import com.thorfeeds.catalog.ui.FeedSolveHost
 import com.thorfeeds.catalog.ui.CatalogViewModel
 import com.thorfeeds.catalog.ui.DetailRoute
+import com.thorfeeds.catalog.ui.DownloadsRoute
+import com.thorfeeds.catalog.ui.SecondaryPage
 import com.thorfeeds.catalog.ui.DisplaySignals
 import com.thorfeeds.catalog.ui.DualDisplayController
 import com.thorfeeds.catalog.ui.SourcesRoute
@@ -122,10 +124,19 @@ class MainActivity : ComponentActivity() {
                         CatalogRoute(
                             dualScreen = dual,
                             onOpenDetail = {
+                                DisplaySignals.secondaryPage.value = SecondaryPage.Game
                                 controller.onSelectionChanged()
                                 if (!dual) nav.navigate("detail")
                             },
                             onOpenSources = { nav.navigate("sources") },
+                            onOpenDownloads = {
+                                if (dual) {
+                                    DisplaySignals.secondaryPage.value = SecondaryPage.Downloads
+                                    controller.onSelectionChanged()
+                                } else {
+                                    nav.navigate("downloads")
+                                }
+                            },
                             onChooseFolder = { folderLauncher() },
                             onImportFeed = { importLauncher() },
                             onSolve = solve,
@@ -136,7 +147,11 @@ class MainActivity : ComponentActivity() {
                             showBack = true,
                             onBack = { nav.popBackStack() },
                             onChooseFolder = { folderLauncher() },
+                            onDownloadStarted = { if (!dual) nav.popBackStack() },
                         )
+                    }
+                    composable("downloads") {
+                        DownloadsRoute(showBack = true, onBack = { nav.popBackStack() })
                     }
                     composable("sources") {
                         SourcesRoute(

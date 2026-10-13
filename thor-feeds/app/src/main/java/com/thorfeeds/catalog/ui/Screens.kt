@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
@@ -62,13 +65,20 @@ import androidx.compose.foundation.background
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
@@ -100,6 +110,7 @@ fun CatalogRoute(
     dualScreen: Boolean,
     onOpenDetail: () -> Unit,
     onOpenSources: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onChooseFolder: () -> Unit,
     onImportFeed: () -> Unit,
     onSolve: (sourceId: String, url: String) -> Unit,
@@ -132,6 +143,7 @@ fun CatalogRoute(
                     titleContentColor = MaterialTheme.colorScheme.onBackground,
                 ),
                 actions = {
+                    IconButton(onClick = onOpenDownloads) { Icon(Icons.Filled.Download, "Downloads") }
                     IconButton(onClick = onChooseFolder) { Icon(Icons.Filled.Folder, "Games folder") }
                     IconButton(onClick = vm::refresh) { Icon(Icons.Filled.Refresh, "Refresh feeds") }
                     IconButton(onClick = onOpenSources) { Icon(Icons.Filled.Settings, "Feeds") }
@@ -176,7 +188,16 @@ fun CatalogRoute(
                     popularity,
                 )
             }
-            LaunchedEffect(allRows) { vm.ensureArt(allRows) }
+            val listState = rememberLazyListState()
+            var artWindow by remember { mutableIntStateOf(ART_PAGE) }
+            LaunchedEffect(sort, query) { artWindow = ART_PAGE }
+            LaunchedEffect(listState, artWindow, rows.size) {
+                snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+                    .collect { last ->
+                        if (last >= artWindow - 8 && artWindow < rows.size) artWindow += ART_PAGE
+                    }
+            }
+            LaunchedEffect(artWindow, rows) { vm.ensureArt(rows.take(artWindow)) }
             OutlinedTextField(
                 value = query,
                 onValueChange = vm::setQuery,
@@ -222,10 +243,11 @@ fun CatalogRoute(
                     onAction = if (query.isBlank()) onImportFeed else ({ vm.setQuery("") }),
                 )
                 else -> LazyColumn(
+                    state = listState,
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(rows, key = { TitleCanonicalizer.identityKey(it.canonicalTitle) }) { row ->
+                    itemsIndexed(rows, key = { _, row -> TitleCanonicalizer.identityKey(row.canonicalTitle) }) { index, row ->
                         val present = TitleCanonicalizer.identityKey(row.canonicalTitle) in onDevice
                         val active = download?.releaseId != null &&
                             row.all.any { it.id == download?.releaseId } &&
@@ -239,13 +261,12 @@ fun CatalogRoute(
                                 vm.select(row.canonicalTitle)
                                 onOpenDetail()
                             },
-                            onFocused = if (dualScreen) {
-                                {
+                            onFocused = {
+                                if (index >= artWindow - 8 && artWindow < rows.size) artWindow += ART_PAGE
+                                if (dualScreen) {
                                     vm.select(row.canonicalTitle)
                                     onOpenDetail()
                                 }
-                            } else {
-                                null
                             },
                         )
                     }
@@ -333,6 +354,8 @@ private fun ArtPlaceholder(title: String, modifier: Modifier) {
     }
 }
 
+private const val ART_PAGE = 50
+
 private fun sortLabel(sort: CatalogSort): String {
     return when (sort) {
         CatalogSort.NEWEST -> "Newest"
@@ -344,7 +367,12 @@ private fun sortLabel(sort: CatalogSort): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DetailRoute(showBack: Boolean, onBack: () -> Unit, onChooseFolder: () -> Unit = {}) {
+fun DetailRoute(
+    showBack: Boolean,
+    onBack: () -> Unit,
+    onChooseFolder: () -> Unit = {},
+    onDownloadStarted: () -> Unit = {},
+) {
     val vm: CatalogViewModel = viewModel()
     val entities by vm.releases.collectAsStateWithLifecycle()
     val selection by vm.selection.collectAsState()
@@ -401,7 +429,10 @@ fun DetailRoute(showBack: Boolean, onBack: () -> Unit, onChooseFolder: () -> Uni
                         folderReady = folderUri != null,
                         download = download?.takeIf { it.releaseId == release.id },
                         busyElsewhere = download != null && download?.terminal == false && download?.releaseId != release.id,
-                        onDownload = vm::startDownload,
+                        onDownload = { id ->
+                            vm.startDownload(id)
+                            onDownloadStarted()
+                        },
                         onCancel = vm::cancelDownload,
                         onChooseFolder = onChooseFolder,
                         onOpenZArchiver = vm::openZArchiver,
@@ -726,6 +757,134 @@ private fun FailureText(text: String, emphasize: Boolean) {
     }) {
         Text("Copy details")
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DownloadsRoute(showBack: Boolean, onBack: () -> Unit) {
+    val vm: CatalogViewModel = viewModel()
+    val records by vm.downloadRecords.collectAsState()
+    val live by vm.download.collectAsState()
+    val rows = records.sortedByDescending { it.updatedAt }
+    Scaffold(
+        modifier = Modifier.onPreviewKeyEvent { event ->
+            if (event.type == KeyEventType.KeyUp && event.key == Key.ButtonB) {
+                onBack()
+                true
+            } else {
+                false
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text("Downloads") },
+                navigationIcon = {
+                    if (showBack) {
+                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            )
+        },
+    ) { padding ->
+        if (rows.isEmpty()) {
+            EmptyCatalog(
+                title = "No downloads yet",
+                body = "Games you download show up here, including after Thor Feeds is closed.",
+                action = if (showBack) "Back" else "Waiting",
+                onAction = onBack,
+            )
+        } else {
+            LazyColumn(
+                Modifier.fillMaxSize().padding(padding),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(rows, key = { it.releaseId }) { record ->
+                    DownloadRow(record, live, vm)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadRow(
+    record: com.thorfeeds.catalog.download.DownloadRecord,
+    live: DownloadSnapshot?,
+    vm: CatalogViewModel,
+) {
+    val current = live?.takeIf { it.releaseId == record.releaseId }
+    val phase = current?.phase ?: record.toPhase()
+    val bytes = current?.bytesRead ?: record.bytesRead
+    val total = current?.totalBytes ?: record.totalBytes
+    val fileName = current?.fileName ?: record.fileName
+    val message = current?.message ?: record.message
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(record.canonicalTitle, style = MaterialTheme.typography.titleMedium)
+            Text(downloadPhaseLabel(phase), fontWeight = FontWeight.Medium)
+            Text(downloadProgress(fileName, bytes, total), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!phase.isSettled() && total != null && total > 0) {
+                LinearProgressIndicator(
+                    progress = { (bytes.toFloat() / total.toFloat()).coerceIn(0f, 1f) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else if (!phase.isSettled()) {
+                LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+            if (!message.isNullOrBlank() && (phase == DownloadPhase.Failed || phase == DownloadPhase.Cancelled || phase == DownloadPhase.Interrupted)) {
+                FailureText(message, emphasize = true)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!phase.isSettled()) {
+                    OutlinedButton(onClick = vm::cancelDownload) { Text("Cancel") }
+                }
+                if (phase == DownloadPhase.Failed || phase == DownloadPhase.Interrupted || phase == DownloadPhase.Cancelled) {
+                    Button(onClick = { vm.retryDownload(record.releaseId) }) { Text("Retry") }
+                }
+                val archiveName = fileName
+                if (phase == DownloadPhase.Completed && archiveName != null && com.thorfeeds.catalog.core.ArchiveLayout.formatOf(archiveName) != null) {
+                    OutlinedButton(onClick = { vm.extractExisting(record.releaseId) }) { Text("Extract") }
+                }
+                if (phase.isSettled()) {
+                    OutlinedButton(onClick = { vm.deleteDownload(record.releaseId) }) { Text("Delete") }
+                }
+            }
+        }
+    }
+}
+
+private fun DownloadPhase.isSettled(): Boolean {
+    return this == DownloadPhase.Completed || this == DownloadPhase.Failed ||
+        this == DownloadPhase.Cancelled || this == DownloadPhase.Interrupted
+}
+
+private fun downloadPhaseLabel(phase: DownloadPhase): String {
+    return when (phase) {
+        DownloadPhase.Connecting -> "Connecting"
+        DownloadPhase.Running -> "Downloading"
+        DownloadPhase.Extracting -> "Extracting"
+        DownloadPhase.Completed -> "Finished"
+        DownloadPhase.Failed -> "Failed"
+        DownloadPhase.Cancelled -> "Cancelled"
+        DownloadPhase.Interrupted -> "Interrupted"
+    }
+}
+
+private fun downloadProgress(fileName: String?, bytes: Long, total: Long?): String {
+    val name = fileName?.let { "$it · " }.orEmpty()
+    val amount = if (total != null && total > 0) {
+        "${ByteFormat.format(bytes)} of ${ByteFormat.format(total)}"
+    } else if (bytes > 0) {
+        ByteFormat.format(bytes)
+    } else {
+        "No bytes yet"
+    }
+    return name + amount
 }
 
 private fun archiveCaption(archives: List<LocatedArchive>): String {

@@ -11,8 +11,10 @@ import com.thorfeeds.catalog.core.CatalogArt
 import com.thorfeeds.catalog.core.CatalogRow
 import com.thorfeeds.catalog.core.CatalogSort
 import com.thorfeeds.catalog.core.TitleCanonicalizer
+import com.thorfeeds.catalog.download.DownloadRecord
 import com.thorfeeds.catalog.download.DownloadService
 import com.thorfeeds.catalog.download.ZArchiverLaunch
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -30,7 +32,7 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val deleteArchiveAfterExtract = graph.library.deleteArchiveAfterExtract.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val catalogSort = graph.library.catalogSort.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CatalogSort.NEWEST)
     val artByTitle = MutableStateFlow<Map<String, CatalogArt>>(emptyMap())
-    private val artRequested = mutableSetOf<String>()
+    private val artRequested = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     val onDeviceKeys = graph.library.onDeviceKeys
     val onDeviceArchives = graph.library.onDeviceArchives
     val refreshing = graph.library.refreshing
@@ -38,6 +40,7 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val folderLabel = graph.library.folderLabel
     val folderProblem = graph.library.folderProblem
     val download = graph.downloads.snapshot
+    val downloadRecords = graph.downloads.records
     val solveSession = graph.library.solveSession
     val query = MutableStateFlow("")
 
@@ -58,13 +61,20 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     fun setCatalogSort(sort: CatalogSort) = launch { graph.library.setCatalogSort(sort) }
 
     fun ensureArt(rows: List<CatalogRow>) {
-        val requests = rows.map { TitleCanonicalizer.identityKey(it.canonicalTitle) to it.canonicalTitle }
-            .distinctBy { it.first }
-            .filter { (key, _) -> key !in artByTitle.value && artRequested.add(key) }
-        if (requests.isEmpty()) return
-        viewModelScope.launch {
+        if (rows.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val requests = rows.map { TitleCanonicalizer.identityKey(it.canonicalTitle) to it.canonicalTitle }
+                .distinctBy { it.first }
+                .filter { (key, _) -> key !in artByTitle.value && artRequested.add(key) }
+            if (requests.isEmpty()) return@launch
             graph.steamArt.resolve(requests) { key, art ->
-                artByTitle.value = artByTitle.value + (key to art)
+                synchronized(artByTitle) {
+                    artByTitle.value = artByTitle.value + (key to art)
+                }
+            }
+            val loaded = artByTitle.value.keys
+            requests.forEach { (key, _) ->
+                if (key !in loaded) artRequested.remove(key)
             }
         }
     }
@@ -113,6 +123,15 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
 
     fun noteSolveFailure(message: String) {
         messages.tryEmit(message)
+    }
+
+    fun retryDownload(releaseId: String) {
+        val record = graph.downloads.records.value.firstOrNull { it.releaseId == releaseId }
+        if (record?.kind == DownloadRecord.KIND_EXTRACT) extractExisting(releaseId) else startDownload(releaseId)
+    }
+
+    fun deleteDownload(releaseId: String) {
+        graph.downloads.deleteDownload(releaseId)
     }
 
     fun startDownload(releaseId: String) {

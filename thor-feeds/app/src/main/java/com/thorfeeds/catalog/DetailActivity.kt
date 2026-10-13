@@ -6,8 +6,12 @@ import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import com.thorfeeds.catalog.ui.DetailRoute
 import com.thorfeeds.catalog.ui.DisplaySignals
+import com.thorfeeds.catalog.ui.DownloadsRoute
+import com.thorfeeds.catalog.ui.SecondaryPage
 import com.thorfeeds.catalog.ui.ThorFeedsTheme
 
 class DetailActivity : ComponentActivity() {
@@ -25,28 +29,43 @@ class DetailActivity : ComponentActivity() {
             this,
             object : androidx.activity.OnBackPressedCallback(true) {
                 override fun handleOnBackPressed() {
-                    DisplaySignals.userClosedDetail = true
-                    finish()
+                    if (DisplaySignals.secondaryPage.value == SecondaryPage.Downloads) {
+                        DisplaySignals.secondaryPage.value = SecondaryPage.Game
+                    } else {
+                        DisplaySignals.userClosedDetail = true
+                        finish()
+                    }
                 }
             },
         )
         setContent {
             ThorFeedsTheme {
-                DetailRoute(
-                    showBack = true,
-                    onBack = {
-                        DisplaySignals.userClosedDetail = true
-                        finish()
-                    },
-                )
+                val page by DisplaySignals.secondaryPage.collectAsState()
+                if (page == SecondaryPage.Downloads) {
+                    DownloadsRoute(showBack = true, onBack = {
+                        DisplaySignals.secondaryPage.value = SecondaryPage.Game
+                    })
+                } else {
+                    DetailRoute(
+                        showBack = true,
+                        onBack = {
+                            DisplaySignals.userClosedDetail = true
+                            finish()
+                        },
+                    )
+                }
             }
         }
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BUTTON_B) {
-            DisplaySignals.userClosedDetail = true
-            finish()
+            if (DisplaySignals.secondaryPage.value == SecondaryPage.Downloads) {
+                DisplaySignals.secondaryPage.value = SecondaryPage.Game
+            } else {
+                DisplaySignals.userClosedDetail = true
+                finish()
+            }
             return true
         }
         return super.onKeyUp(keyCode, event)

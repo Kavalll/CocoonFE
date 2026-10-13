@@ -108,6 +108,7 @@ class DownloadService : Service() {
             DownloadPhase.Completed -> state.message ?: "Download complete"
             DownloadPhase.Failed -> state.message ?: "Download failed"
             DownloadPhase.Cancelled -> state.message ?: "Download cancelled"
+            DownloadPhase.Interrupted -> state.message ?: "Download interrupted"
             DownloadPhase.Extracting -> {
                 val amount = if (state.totalBytes != null && state.totalBytes > 0) {
                     "${ByteFormat.format(state.bytesRead)} of ${ByteFormat.format(state.totalBytes)}"
