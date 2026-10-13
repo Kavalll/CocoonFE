@@ -1,0 +1,90 @@
+# Thor Feeds
+
+Thor Feeds is an Android catalog for the AYN Thor. You point it at your own JSON collection feeds, browse one row per game, and download a release into a games folder you choose. It does not ship feeds, credentials, or game files.
+
+## Add a feed
+
+A feed is a `DownloadSourceFeed`:
+
+```json
+{
+  "name": "My shelf",
+  "downloads": [
+    {
+      "title": "Example Quest Free Download (v1.0.0)",
+      "uploadDate": "2026-10-11T19:02:09+00:00",
+      "fileSize": "5.9 GB",
+      "uris": [
+        "https://example.test/mirror-a",
+        "https://example.test/mirror-b"
+      ]
+    }
+  ]
+}
+```
+
+- `title` is the release row. The catalog name is the title with the `Free Download` boilerplate, and any leftover version or build tag, removed.
+- `fileSize` is shown as written. It is not treated as an exact byte count.
+- `uris` is an ordered list of mirrors. The first link is tried first. If that host fails, the next link is tried.
+
+In the app, open **Feeds** and choose **Add URL**. Paste an `http` or `https` URL. Nothing is prefilled.
+
+You can also choose **Import JSON** and pick a local file with the same shape. The URL does not need to end in `.json`. If the server returns a Cloudflare check page, tap **Solve check** and complete that page yourself. The feed is then read in that same page. Game downloads are unchanged.
+
+Edit or remove a remote URL from the same screen. Removing a feed does not delete files already in the games folder.
+
+## Games folder
+
+Choose a folder with the system picker. Thor Feeds keeps that permission and downloads directly into it.
+
+GameHub Lite does not publish a required library layout for manually imported PC games. Import is “pick the game’s `.exe`”. This app therefore uses one subdirectory per canonical title:
+
+```text
+<games folder>/
+  Example Quest/
+    example-quest.zip
+```
+
+The file name comes from the host. After a zip or rar finishes downloading, Thor Feeds extracts it into that same game folder. If the archive’s only top-level entry is a directory, that one wrapper is removed. GameHub Lite’s private library is not edited. Import the game’s `.exe` from that folder the same way as a manual copy.
+
+In **Feeds**, under **Games folder**, **Remove archive after extracting** is off by default. Turn it on to delete the zip or rar only after the extracted files are present. A failed extract keeps the archive. A rar that cannot be opened in the app can be handed to ZArchiver when that app is installed.
+
+If a zip or rar is already in that game’s folder, the game screen shows **Extract** on the Latest card. That uses the same unpacker and does not download the file again.
+
+If a top-level file, a non-empty top-level folder, or a file inside a top-level folder already matches the canonical title, the game is marked **On device** and is not downloaded again unless you choose **Download again**. Partial downloads do not count. Matching ignores case, the `Free Download` suffix, and punctuation differences such as `:`.
+
+## Two screens
+
+When a second display is on and **Use the other screen** is enabled (the default):
+
+- Opening or resuming Thor Feeds shows the catalog on the display where it was opened and the game screen on the other display, even if that screen was closed before leaving the app.
+- If no game is selected yet, the other display waits with an empty detail state. The last selected game is restored when there is one.
+- The catalog can be sorted by newest, name, size, or popularity. Popularity is Steam’s public recommendation count for an exact title match. Art uses the public Steam library capsule and is cached on the device. Capsules are requested 50 games at a time; the next 50 start when the list is scrolled or focused near the end of that page. An ambiguous name is left without art. Games past the loaded page keep the letter placeholder.
+
+With a gamepad, the D-pad moves focus and A confirms. B goes back. Focusing a catalog card opens that game on the other display.
+
+With one display, the catalog and the detail screen are normal in-app pages.
+
+Thor Feeds was not run on a physical AYN Thor. A headless Android 34 emulator was started here, but QEMU stalled before `adb` connected, so a simulated second display was not exercised on a running device. Choosing the other display is unit-tested. The app itself uses `DisplayManager`, `ActivityOptions.setLaunchDisplayId`, and a `Presentation` fallback.
+
+## Downloads
+
+The active mirror is shown as its host and its position in the list, for example `Mirror 1 of 2 · Gofile`, with bytes read and a cancel button. A notification offers the same cancel action.
+
+- Gofile share pages (`/d/{id}`) are resolved to the file Gofile lists for that link. A direct storage URL is downloaded as a file. If resolution or the transfer fails, the next `uris` entry is used.
+- 1fichier and DataNodes share pages follow that host’s own download form once. A wait or a missing file fails the mirror.
+- VikingFile uses a direct link when the page already exposes one. If the page asks for an interactive check, that mirror is skipped. Thor Feeds does not try to solve that check.
+- Any other URL is treated as a direct file. An HTML response is a failed mirror, not a saved game.
+- Resume sends `Range` only after that same mirror has advertised `Accept-Ranges: bytes` or already returned `206`. Otherwise the file starts over.
+
+One download runs at a time. Leaving the app is covered by a foreground service. Force-stopping the app stops the transfer; the next **Download** continues only when the host supports resume.
+
+## Build
+
+```shell
+cd thor-feeds
+./gradlew assembleDebug
+./gradlew testDebugUnitTest
+```
+
+The debug APK is `app/build/outputs/apk/debug/app-debug.apk`. `minSdk` is 26. Set `ANDROID_HOME` or `local.properties` (`sdk.dir`) to an Android SDK with platform 35.
