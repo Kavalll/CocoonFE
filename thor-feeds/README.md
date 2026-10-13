@@ -49,6 +49,8 @@ The file name comes from the host. After a zip or rar finishes downloading, Thor
 
 In **Feeds**, under **Games folder**, **Remove archive after extracting** is off by default. Turn it on to delete the zip or rar only after the extracted files are present. A failed extract keeps the archive. A rar that cannot be opened in the app can be handed to ZArchiver when that app is installed.
 
+If a zip or rar is already in that game’s folder, the game screen shows **Extract** on the Latest card. That uses the same unpacker and does not download the file again.
+
 If a top-level file, a non-empty top-level folder, or a file inside a top-level folder already matches the canonical title, the game is marked **On device** and is not downloaded again unless you choose **Download again**. Partial downloads do not count. Matching ignores case, the `Free Download` suffix, and punctuation differences such as `:`.
 
 ## Two screens

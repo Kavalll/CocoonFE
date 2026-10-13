@@ -5,8 +5,11 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import com.thorfeeds.catalog.core.ArchiveFormat
 import com.thorfeeds.catalog.core.ArchiveLayout
+import com.thorfeeds.catalog.core.GameArchiveIndex
+import com.thorfeeds.catalog.core.LocatedArchive
 import com.thorfeeds.catalog.core.Names
 import com.thorfeeds.catalog.core.UnpackException
+import com.thorfeeds.catalog.data.FolderScanner
 import com.thorfeeds.catalog.data.GameArchiveExtractor
 import com.thorfeeds.catalog.data.LibraryRepository
 import com.thorfeeds.catalog.data.SafByteSink
@@ -69,6 +72,14 @@ class DownloadController(
             if (job?.isActive == true) return
             TransferControl.reset()
             job = scope.launch { run(releaseId) }
+        }
+    }
+
+    fun extractExisting(releaseId: String) {
+        synchronized(this) {
+            if (job?.isActive == true) return
+            TransferControl.reset()
+            job = scope.launch { runExtract(releaseId) }
         }
     }
 
@@ -173,6 +184,97 @@ class DownloadController(
         }
     }
 
+    private suspend fun runExtract(releaseId: String) {
+        val entity = library.readRelease(releaseId)
+        if (entity == null) {
+            snapshot.value = failed(releaseId, "Game", DownloadPhases.EXTRACTING, "That release is no longer in the catalog.")
+            return
+        }
+        val parsed = entity.toParsed()
+        val base = DownloadSnapshot(
+            releaseId = releaseId,
+            canonicalTitle = entity.canonicalTitle,
+            phase = DownloadPhase.Extracting,
+            mirrorIndex = 0,
+            mirrorCount = parsed.uris.size.coerceAtLeast(1),
+            mirrorLabel = "archive",
+            bytesRead = 0L,
+            totalBytes = null,
+            fileName = null,
+            message = null,
+        )
+        val folder = library.currentFolder()
+        if (folder.isNullOrBlank()) {
+            snapshot.value = base.copy(
+                phase = DownloadPhase.Failed,
+                message = detail(base, DownloadPhases.EXTRACTING, "Choose a games folder first."),
+            )
+            return
+        }
+        val tree = DocumentFile.fromTreeUri(context, Uri.parse(folder))
+        if (tree == null || !tree.canWrite()) {
+            snapshot.value = base.copy(
+                phase = DownloadPhase.Failed,
+                message = detail(base, DownloadPhases.EXTRACTING, "The games folder permission expired. Choose it again."),
+            )
+            return
+        }
+        val directoryName = Names.sanitizeFolder(entity.canonicalTitle)
+        val gameDir = tree.listFiles().firstOrNull { it.isDirectory && it.name.equals(directoryName, ignoreCase = true) }
+            ?: tree.createDirectory(directoryName)
+        if (gameDir == null) {
+            snapshot.value = base.copy(
+                phase = DownloadPhase.Failed,
+                message = detail(base, DownloadPhases.EXTRACTING, "Couldn't create a folder for this game."),
+            )
+            return
+        }
+        snapshot.value = base
+        try {
+            val archives = existingArchives(tree, gameDir, entity.canonicalTitle)
+            extractArchives(gameDir, directoryName, archives, base, missingMeansSaved = false)
+            library.rescan()
+        } catch (cancelled: CancellationException) {
+            val current = snapshot.value ?: base
+            snapshot.value = current.copy(
+                phase = DownloadPhase.Cancelled,
+                message = cancelDetail(current),
+            )
+        } catch (error: Exception) {
+            val current = snapshot.value ?: base
+            snapshot.value = current.copy(
+                phase = DownloadPhase.Failed,
+                message = failureDetail(current, error),
+            )
+        }
+    }
+
+    private fun existingArchives(
+        tree: androidx.documentfile.provider.DocumentFile,
+        gameDir: androidx.documentfile.provider.DocumentFile,
+        canonicalTitle: String,
+    ): List<ArchiveTarget> {
+        val scanned = FolderScanner(context).scan(tree.uri.toString()).archives
+        return GameArchiveIndex.forTitle(canonicalTitle, scanned).mapNotNull { located ->
+            val document = findArchive(tree, located) ?: return@mapNotNull null
+            val format = ArchiveLayout.formatOf(located.fileName) ?: return@mapNotNull null
+            val output = if (located.folderName == null) gameDir else document.parentFile ?: gameDir
+            ArchiveTarget(located.fileName, format, document, output)
+        }
+    }
+
+    private fun findArchive(
+        tree: androidx.documentfile.provider.DocumentFile,
+        located: LocatedArchive,
+    ): androidx.documentfile.provider.DocumentFile? {
+        val parent = if (located.folderName == null) {
+            tree
+        } else {
+            tree.listFiles().firstOrNull { it.isDirectory && it.name == located.folderName } ?: return null
+        }
+        return parent.listFiles().firstOrNull { it.isFile && it.name == located.fileName }
+    }
+
     private suspend fun extractSaved(
         gameDir: androidx.documentfile.provider.DocumentFile,
         directoryName: String,
@@ -182,15 +284,32 @@ class DownloadController(
         val archives = savedNames.mapNotNull { name ->
             val format = ArchiveLayout.formatOf(name) ?: return@mapNotNull null
             val document = gameDir.findFile(name)?.takeIf { it.isFile } ?: return@mapNotNull null
-            Triple(name, format, document)
+            ArchiveTarget(name, format, document, gameDir)
         }
+        extractArchives(gameDir, directoryName, archives, base, missingMeansSaved = true)
+    }
+
+    private suspend fun extractArchives(
+        gameDir: androidx.documentfile.provider.DocumentFile,
+        directoryName: String,
+        archives: List<ArchiveTarget>,
+        base: DownloadSnapshot,
+        missingMeansSaved: Boolean,
+    ) {
         if (archives.isEmpty()) {
-            finishDownload(directoryName, "Saved in $directoryName")
+            if (missingMeansSaved) {
+                finishDownload(directoryName, "Saved in $directoryName")
+            } else {
+                snapshot.value = (snapshot.value ?: base).copy(
+                    phase = DownloadPhase.Failed,
+                    message = detail(base, DownloadPhases.EXTRACTING, "No zip or rar is in this game folder."),
+                )
+            }
             return
         }
         val deleteAfter = library.deleteArchiveAfterExtract()
         val notes = mutableListOf<String>()
-        for ((name, format, document) in archives) {
+        for ((name, format, document, outputDir) in archives) {
             currentCoroutineContext().ensureActive()
             if (TransferControl.isCancelled()) throw CancellationException("Download cancelled")
             if (document.length() <= 0L) {
@@ -214,19 +333,21 @@ class DownloadController(
                     archive = document,
                     format = format,
                     cancelled = { TransferControl.isCancelled() },
-                ) { written, total ->
-                    val now = System.currentTimeMillis()
-                    if (now - lastEmit > 200 || written == total) {
-                        lastEmit = now
-                        val shown = snapshot.value ?: current
-                        snapshot.value = shown.copy(
-                            phase = DownloadPhase.Extracting,
-                            fileName = name,
-                            bytesRead = written,
-                            totalBytes = total,
-                        )
-                    }
-                }
+                    onProgress = { written, total ->
+                        val now = System.currentTimeMillis()
+                        if (now - lastEmit > 200 || written == total) {
+                            lastEmit = now
+                            val shown = snapshot.value ?: current
+                            snapshot.value = shown.copy(
+                                phase = DownloadPhase.Extracting,
+                                fileName = name,
+                                bytesRead = written,
+                                totalBytes = total,
+                            )
+                        }
+                    },
+                    outputDirectory = outputDir,
+                )
                 if (deleteAfter) {
                     if (document.exists() && !document.delete()) {
                         notes += "$name was extracted, but the archive could not be removed."
@@ -345,6 +466,13 @@ class DownloadController(
             error = error,
         )
     }
+
+    private data class ArchiveTarget(
+        val name: String,
+        val format: ArchiveFormat,
+        val document: androidx.documentfile.provider.DocumentFile,
+        val outputDir: androidx.documentfile.provider.DocumentFile,
+    )
 
     private fun failed(releaseId: String, title: String, phase: String, detail: String): DownloadSnapshot {
         return DownloadSnapshot(

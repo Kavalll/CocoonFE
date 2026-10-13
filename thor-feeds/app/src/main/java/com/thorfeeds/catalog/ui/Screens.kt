@@ -71,6 +71,7 @@ import com.thorfeeds.catalog.core.ByteFormat
 import com.thorfeeds.catalog.core.CatalogDeduper
 import com.thorfeeds.catalog.core.CatalogRow
 import com.thorfeeds.catalog.core.ParsedRelease
+import com.thorfeeds.catalog.core.LocatedArchive
 import com.thorfeeds.catalog.core.TitleCanonicalizer
 import com.thorfeeds.catalog.core.UploadDates
 import com.thorfeeds.catalog.data.SourceRecord
@@ -243,11 +244,13 @@ fun DetailRoute(showBack: Boolean, onBack: () -> Unit, onChooseFolder: () -> Uni
     val entities by vm.releases.collectAsStateWithLifecycle()
     val selection by vm.selection.collectAsState()
     val onDevice by vm.onDeviceKeys.collectAsState()
+    val archivesByGame by vm.onDeviceArchives.collectAsState()
     val download by vm.download.collectAsState()
     val folderUri by vm.folderUri.collectAsStateWithLifecycle()
     val rows = remember(entities) { CatalogDeduper.rows(entities.map { it.toParsed() }) }
     val row = rows.firstOrNull { TitleCanonicalizer.identityKey(it.canonicalTitle) == selection?.let(TitleCanonicalizer::identityKey) }
     val present = row != null && TitleCanonicalizer.identityKey(row.canonicalTitle) in onDevice
+    val archives = row?.let { archivesByGame[TitleCanonicalizer.identityKey(it.canonicalTitle)].orEmpty() }.orEmpty()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -296,6 +299,12 @@ fun DetailRoute(showBack: Boolean, onBack: () -> Unit, onChooseFolder: () -> Uni
                         onCancel = vm::cancelDownload,
                         onChooseFolder = onChooseFolder,
                         onOpenZArchiver = vm::openZArchiver,
+                        archives = if (index == 0) archives else emptyList(),
+                        onExtract = if (index == 0 && archives.isNotEmpty()) {
+                            { vm.extractExisting(release.id) }
+                        } else {
+                            null
+                        },
                     )
                 }
             }
@@ -315,6 +324,8 @@ private fun ReleaseCard(
     onCancel: () -> Unit,
     onChooseFolder: () -> Unit,
     onOpenZArchiver: (String, String) -> Unit,
+    archives: List<LocatedArchive> = emptyList(),
+    onExtract: (() -> Unit)? = null,
 ) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -355,6 +366,13 @@ private fun ReleaseCard(
                     OutlinedButton(onClick = {
                         onOpenZArchiver(download.archiveUri, download.fileName ?: "archive.rar")
                     }) { Text("Extract with ZArchiver") }
+                }
+                if (onExtract != null && archives.isNotEmpty() && !busyElsewhere) {
+                    Text(
+                        archiveCaption(archives),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(onClick = onExtract, enabled = folderReady) { Text("Extract") }
                 }
                 when {
                     !folderReady -> Button(onClick = onChooseFolder) { Text("Choose a games folder") }
@@ -588,6 +606,15 @@ private fun FailureText(text: String, emphasize: Boolean) {
         clipboard.setPrimaryClip(ClipData.newPlainText("Thor Feeds download", text))
     }) {
         Text("Copy details")
+    }
+}
+
+private fun archiveCaption(archives: List<LocatedArchive>): String {
+    val names = archives.map { it.fileName }.distinct()
+    return if (names.size == 1) {
+        "${names.single()} is already in the game folder."
+    } else {
+        "${names.size} archives are already in the game folder."
     }
 }
 

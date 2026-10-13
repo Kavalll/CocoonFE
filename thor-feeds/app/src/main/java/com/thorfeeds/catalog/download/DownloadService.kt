@@ -55,9 +55,11 @@ class DownloadService : Service() {
                 ThorFeedsApp.graph(this).downloads.cancel()
                 return START_NOT_STICKY
             }
-            ACTION_START -> {
+            ACTION_START, ACTION_EXTRACT -> {
                 val releaseId = intent.getStringExtra(EXTRA_RELEASE_ID)
-                val placeholder = placeholderNotification()
+                val placeholder = placeholderNotification(
+                    if (intent.action == ACTION_EXTRACT) "Extracting archive" else "Starting download",
+                )
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     startForeground(
                         NOTIFICATION_ID,
@@ -70,7 +72,8 @@ class DownloadService : Service() {
                 started = true
                 acquireLock()
                 if (!releaseId.isNullOrBlank()) {
-                    ThorFeedsApp.graph(this).downloads.start(releaseId)
+                    val downloads = ThorFeedsApp.graph(this).downloads
+                    if (intent.action == ACTION_EXTRACT) downloads.extractExisting(releaseId) else downloads.start(releaseId)
                 }
             }
         }
@@ -90,11 +93,11 @@ class DownloadService : Service() {
         manager.createNotificationChannel(channel)
     }
 
-    private fun placeholderNotification(): Notification {
+    private fun placeholderNotification(text: String = "Starting download"): Notification {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_download)
             .setContentTitle("Thor Feeds")
-            .setContentText("Starting download")
+            .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .build()
@@ -177,6 +180,7 @@ class DownloadService : Service() {
 
     companion object {
         const val ACTION_START = "com.thorfeeds.catalog.DOWNLOAD_START"
+        const val ACTION_EXTRACT = "com.thorfeeds.catalog.DOWNLOAD_EXTRACT"
         const val ACTION_CANCEL = "com.thorfeeds.catalog.DOWNLOAD_CANCEL"
         const val EXTRA_RELEASE_ID = "release_id"
         private const val CHANNEL_ID = "downloads"

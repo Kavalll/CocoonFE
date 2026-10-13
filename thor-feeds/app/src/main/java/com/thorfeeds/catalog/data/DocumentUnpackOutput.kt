@@ -84,8 +84,9 @@ object GameArchiveExtractor {
         format: ArchiveFormat,
         cancelled: () -> Boolean,
         onProgress: (Long, Long?) -> Unit,
+        outputDirectory: DocumentFile? = null,
     ): List<String> {
-        val parent = archive.parentFile
+        val parent = outputDirectory ?: archive.parentFile
             ?: throw UnpackException(
                 format.label,
                 format == ArchiveFormat.RAR,

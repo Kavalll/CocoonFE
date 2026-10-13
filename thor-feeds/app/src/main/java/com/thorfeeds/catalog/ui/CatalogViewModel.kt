@@ -25,6 +25,7 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val useSecondScreen = graph.library.useSecondScreen.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
     val deleteArchiveAfterExtract = graph.library.deleteArchiveAfterExtract.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val onDeviceKeys = graph.library.onDeviceKeys
+    val onDeviceArchives = graph.library.onDeviceArchives
     val refreshing = graph.library.refreshing
     val selection = graph.library.selection
     val folderLabel = graph.library.folderLabel
@@ -98,6 +99,22 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
             ContextCompat.startForegroundService(app, intent)
         } catch (_: Exception) {
             graph.downloads.start(releaseId)
+        }
+    }
+
+    fun extractExisting(releaseId: String) {
+        if (graph.downloads.isRunning()) {
+            messages.tryEmit("A download is already running.")
+            return
+        }
+        val app = getApplication<Application>()
+        val intent = Intent(app, DownloadService::class.java)
+            .setAction(DownloadService.ACTION_EXTRACT)
+            .putExtra(DownloadService.EXTRA_RELEASE_ID, releaseId)
+        try {
+            ContextCompat.startForegroundService(app, intent)
+        } catch (_: Exception) {
+            graph.downloads.extractExisting(releaseId)
         }
     }
 

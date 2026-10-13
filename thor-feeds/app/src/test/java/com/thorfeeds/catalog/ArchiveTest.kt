@@ -1,5 +1,7 @@
 package com.thorfeeds.catalog
 
+import com.thorfeeds.catalog.core.GameArchiveIndex
+import com.thorfeeds.catalog.core.LocatedArchive
 import com.thorfeeds.catalog.core.ArchiveFormat
 import com.thorfeeds.catalog.core.ArchiveItem
 import com.thorfeeds.catalog.core.ArchiveLayout
@@ -16,6 +18,18 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 class ArchiveTest {
+    @Test
+    fun existingArchiveIsFoundWithoutANewDownload() {
+        val archives = listOf(
+            LocatedArchive(folderName = "Mega Bonk", fileName = "Mega.Bonk.rar"),
+            LocatedArchive(folderName = "Mega Bonk", fileName = "play.exe"),
+            LocatedArchive(folderName = "Other Game", fileName = "other.rar"),
+            LocatedArchive(folderName = null, fileName = "Mega Bonk.zip"),
+        )
+        val found = GameArchiveIndex.forTitle("Mega Bonk", archives).map { it.fileName }
+        assertEquals(listOf("Mega.Bonk.rar", "Mega Bonk.zip"), found)
+    }
+
     @Test
     fun singleWrapperDirectoryIsStripped() {
         val plan = ArchiveLayout.plan(

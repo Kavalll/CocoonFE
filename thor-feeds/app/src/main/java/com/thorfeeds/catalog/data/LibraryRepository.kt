@@ -7,7 +7,10 @@ import com.thorfeeds.catalog.core.FeedFormatException
 import com.thorfeeds.catalog.core.FeedParser
 import com.thorfeeds.catalog.core.FeedUrls
 import com.thorfeeds.catalog.core.FeedWebReader
+import com.thorfeeds.catalog.core.GameArchiveIndex
+import com.thorfeeds.catalog.core.LocatedArchive
 import com.thorfeeds.catalog.core.OnDeviceMatcher
+import com.thorfeeds.catalog.core.TitleCanonicalizer
 import com.thorfeeds.catalog.core.UriHosts
 import com.thorfeeds.catalog.net.FeedFetcher
 import kotlinx.coroutines.CancellationException
@@ -42,6 +45,7 @@ class LibraryRepository(
     val useSecondScreen: Flow<Boolean> = settings.useSecondScreen
     val deleteArchiveAfterExtract: Flow<Boolean> = settings.deleteArchiveAfterExtract
     val onDeviceKeys = MutableStateFlow<Set<String>>(emptySet())
+    val onDeviceArchives = MutableStateFlow<Map<String, List<LocatedArchive>>>(emptyMap())
     val refreshing = MutableStateFlow(false)
     val selection = MutableStateFlow<String?>(null)
     val folderLabel = MutableStateFlow<String?>(null)
@@ -146,19 +150,24 @@ class LibraryRepository(
             folderLabel.value = null
             folderProblem.value = null
             onDeviceKeys.value = emptySet()
+            onDeviceArchives.value = emptyMap()
             return
         }
         if (!scanner.hasAccess(uri)) {
             folderLabel.value = null
             folderProblem.value = "The games folder permission expired. Choose it again."
             onDeviceKeys.value = emptySet()
+            onDeviceArchives.value = emptyMap()
             return
         }
         folderProblem.value = null
-        val entries = withContext(Dispatchers.IO) { scanner.scan(uri) }
+        val scanned = withContext(Dispatchers.IO) { scanner.scan(uri) }
         folderLabel.value = scanner.label(uri)
         val titles = dao.canonicalTitles()
-        onDeviceKeys.value = OnDeviceMatcher.presentKeys(titles, entries)
+        onDeviceKeys.value = OnDeviceMatcher.presentKeys(titles, scanned.entries)
+        onDeviceArchives.value = titles.associate { title ->
+            TitleCanonicalizer.identityKey(title) to GameArchiveIndex.forTitle(title, scanned.archives)
+        }.filterValues { it.isNotEmpty() }
     }
 
     suspend fun readRelease(id: String): ReleaseEntity? = dao.get(id)

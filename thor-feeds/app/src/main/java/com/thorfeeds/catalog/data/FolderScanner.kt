@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import com.thorfeeds.catalog.core.ArchiveLayout
+import com.thorfeeds.catalog.core.LocatedArchive
 import com.thorfeeds.catalog.core.Names
 import com.thorfeeds.catalog.core.StoredEntry
 
@@ -19,16 +21,22 @@ class FolderScanner(private val context: Context) {
         return DocumentFile.fromTreeUri(context, Uri.parse(treeUri))?.name
     }
 
-    fun scan(treeUri: String): List<StoredEntry> {
-        val tree = DocumentFile.fromTreeUri(context, Uri.parse(treeUri)) ?: return emptyList()
-        if (!tree.canRead()) return emptyList()
+    fun scan(treeUri: String): FolderSnapshot {
+        val tree = DocumentFile.fromTreeUri(context, Uri.parse(treeUri)) ?: return FolderSnapshot(emptyList(), emptyList())
+        if (!tree.canRead()) return FolderSnapshot(emptyList(), emptyList())
         val entries = mutableListOf<StoredEntry>()
+        val archives = mutableListOf<LocatedArchive>()
         for (child in tree.listFiles()) {
             val name = child.name ?: continue
             if (child.isDirectory) {
-                val payloads = child.listFiles().mapNotNull { file ->
-                    val fileName = file.name ?: return@mapNotNull null
-                    if (file.isFile && !Names.isPartialName(fileName)) fileName else null
+                val payloads = mutableListOf<String>()
+                for (file in child.listFiles()) {
+                    val fileName = file.name ?: continue
+                    if (!file.isFile || Names.isPartialName(fileName)) continue
+                    payloads += fileName
+                    if (ArchiveLayout.formatOf(fileName) != null) {
+                        archives += LocatedArchive(folderName = name, fileName = fileName)
+                    }
                 }
                 entries += StoredEntry(name = name, isDirectory = true, hasPayload = payloads.isNotEmpty())
                 payloads.forEach { fileName ->
@@ -36,10 +44,18 @@ class FolderScanner(private val context: Context) {
                 }
             } else if (child.isFile && !Names.isPartialName(name)) {
                 entries += StoredEntry(name = name, isDirectory = false, hasPayload = true)
+                if (ArchiveLayout.formatOf(name) != null) {
+                    archives += LocatedArchive(folderName = null, fileName = name)
+                }
             }
         }
-        return entries
+        return FolderSnapshot(entries, archives)
     }
+
+    data class FolderSnapshot(
+        val entries: List<StoredEntry>,
+        val archives: List<LocatedArchive>,
+    )
 
     companion object {
         const val TREE_FLAGS: Int =
