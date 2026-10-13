@@ -59,7 +59,7 @@ When a second display is on and **Use the other screen** is enabled (the default
 
 - Opening or resuming Thor Feeds shows the catalog on the display where it was opened and the game screen on the other display, even if that screen was closed before leaving the app.
 - If no game is selected yet, the other display waits with an empty detail state. The last selected game is restored when there is one.
-- The catalog can be sorted by newest, name, size, or popularity. Popularity is Steam’s public recommendation count for an exact title match. Art uses the public Steam library capsule and is cached on the device. An ambiguous name is left without art.
+- The catalog can be sorted by newest, name, size, or popularity. Popularity is Steam’s public recommendation count for an exact title match. Art uses the public Steam library capsule and is cached on the device. Capsules are requested 50 games at a time; the next 50 start when the list is scrolled or focused near the end of that page. An ambiguous name is left without art. Games past the loaded page keep the letter placeholder.
 
 With a gamepad, the D-pad moves focus and A confirms. B goes back. Focusing a catalog card opens that game on the other display.
 

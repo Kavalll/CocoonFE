@@ -31,6 +31,11 @@ data class FeedSolveSession(
     val displayId: Int,
 )
 
+private data class FolderScan(
+    val label: String?,
+    val snapshot: FolderScanner.FolderSnapshot,
+)
+
 class LibraryRepository(
     private val context: Context,
     private val settings: SettingsStore,
@@ -180,13 +185,21 @@ class LibraryRepository(
             return
         }
         folderProblem.value = null
-        val scanned = withContext(Dispatchers.IO) { scanner.scan(uri) }
-        folderLabel.value = scanner.label(uri)
+        val scanned = withContext(Dispatchers.IO) {
+            FolderScan(scanner.label(uri), scanner.scan(uri))
+        }
+        folderLabel.value = scanned.label
         val titles = dao.canonicalTitles()
-        onDeviceKeys.value = OnDeviceMatcher.presentKeys(titles, scanned.entries)
-        onDeviceArchives.value = titles.associate { title ->
-            TitleCanonicalizer.identityKey(title) to GameArchiveIndex.forTitle(title, scanned.archives)
-        }.filterValues { it.isNotEmpty() }
+        val matched = withContext(Dispatchers.IO) {
+            val keys = OnDeviceMatcher.presentKeys(titles, scanned.snapshot.entries)
+            val archives = titles.mapNotNull { title ->
+                val found = GameArchiveIndex.forTitle(title, scanned.snapshot.archives)
+                if (found.isEmpty()) null else TitleCanonicalizer.identityKey(title) to found
+            }.toMap()
+            keys to archives
+        }
+        onDeviceKeys.value = matched.first
+        onDeviceArchives.value = matched.second
     }
 
     suspend fun readRelease(id: String): ReleaseEntity? = dao.get(id)
@@ -196,7 +209,7 @@ class LibraryRepository(
     private suspend fun refresh(source: SourceRecord) {
         try {
             val text = if (source.isRemote) readRemote(source.location) else withContext(Dispatchers.IO) { readLocal(source.location) }
-            val feed = FeedParser.parse(text)
+            val feed = withContext(Dispatchers.IO) { FeedParser.parse(text) }
             dao.replaceFeed(source.id, feed.releases.map { it.toEntity(source.id) })
             updateRecord(source.copy(label = feed.name.ifBlank { source.label }, lastError = null, needsSolve = false))
         } catch (cancelled: CancellationException) {
@@ -223,7 +236,7 @@ class LibraryRepository(
 
     suspend fun acceptWebFeed(sourceId: String, body: String) {
         val source = settings.sources.first().firstOrNull { it.id == sourceId } ?: return
-        val feed = FeedParser.parse(body)
+        val feed = withContext(Dispatchers.IO) { FeedParser.parse(body) }
         dao.replaceFeed(source.id, feed.releases.map { it.toEntity(source.id) })
         UriHosts.hostOf(source.location)?.let { host -> settings.rememberClearedHost(host) }
         updateRecord(source.copy(label = feed.name.ifBlank { source.label }, lastError = null, needsSolve = false))

@@ -1,13 +1,18 @@
 package com.thorfeeds.catalog
 
+import com.thorfeeds.catalog.core.ArtWindow
 import com.thorfeeds.catalog.core.CatalogOrder
 import com.thorfeeds.catalog.core.CatalogRow
 import com.thorfeeds.catalog.core.CatalogSort
+import com.thorfeeds.catalog.core.OnDeviceMatcher
 import com.thorfeeds.catalog.core.ParsedRelease
 import com.thorfeeds.catalog.core.SteamArt
 import com.thorfeeds.catalog.core.SteamHit
+import com.thorfeeds.catalog.core.StoredEntry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CatalogPresentationTest {
@@ -48,6 +53,42 @@ class CatalogPresentationTest {
             listOf("Northwind", "Example Quest", "Mystery"),
             CatalogOrder.sort(rows, CatalogSort.POPULARITY, popularity).map { it.canonicalTitle },
         )
+    }
+
+    @Test
+    fun artAdvancesOnePageWhenTheVisibleListReachesTheLoadedWindow() {
+        val onScreen = ArtWindow.Viewport(lastVisibleIndex = 45, visibleCount = 8, heightPx = 1800)
+        assertEquals(100, ArtWindow.nextPage(window = 50, total = 500, viewport = onScreen))
+        assertEquals(100, ArtWindow.nextPage(window = 100, total = 500, viewport = onScreen))
+        val flung = ArtWindow.Viewport(lastVisibleIndex = 180, visibleCount = 8, heightPx = 1800)
+        assertEquals(200, ArtWindow.nextPage(window = 50, total = 500, viewport = flung))
+        assertEquals(500, ArtWindow.nextPage(window = 480, total = 500, viewport = flung.copy(lastVisibleIndex = 490)))
+        assertFalse(ArtWindow.shouldAdvance(50, 500, onScreen.copy(lastVisibleIndex = 10)))
+    }
+
+    @Test
+    fun artDoesNotRequestTheWholeCatalogFromOneLayoutPass() {
+        val entireList = ArtWindow.Viewport(lastVisibleIndex = 499, visibleCount = 500, heightPx = 20_000)
+        assertEquals(50, ArtWindow.nextPage(window = 50, total = 500, viewport = entireList))
+        val stretched = entireList.copy(visibleCount = 12, heightPx = 20_000)
+        assertEquals(50, ArtWindow.nextPage(window = 50, total = 500, viewport = stretched))
+    }
+
+    @Test
+    fun dpadNearTheEndOfThePageRequestsTheNextPage() {
+        assertFalse(ArtWindow.focusedIndexRequestsNext(index = 0, window = 50, total = 500))
+        assertTrue(ArtWindow.focusedIndexRequestsNext(index = 42, window = 50, total = 500))
+        assertFalse(ArtWindow.focusedIndexRequestsNext(index = 42, window = 100, total = 500))
+        assertFalse(ArtWindow.focusedIndexRequestsNext(index = 90, window = 500, total = 500))
+    }
+
+    @Test
+    fun onDeviceKeysMatchWithoutRescanningEveryTitlePerEntry() {
+        val entries = listOf(
+            StoredEntry("Example Quest", isDirectory = true, hasPayload = true),
+            StoredEntry("notes.txt", isDirectory = false, hasPayload = true),
+        )
+        assertEquals(setOf("example quest"), OnDeviceMatcher.presentKeys(listOf("Example Quest", "Northwind"), entries))
     }
 
     private fun row(title: String, epoch: Long, bytes: Long?): CatalogRow {

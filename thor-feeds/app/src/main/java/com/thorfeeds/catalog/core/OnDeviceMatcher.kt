@@ -24,12 +24,17 @@ object OnDeviceMatcher {
     }
 
     fun presentKeys(catalogTitles: List<String>, entries: List<StoredEntry>): Set<String> {
-        return catalogTitles.map { TitleCanonicalizer.identityKey(it) }
-            .filter { key ->
-                val title = catalogTitles.first { TitleCanonicalizer.identityKey(it) == key }
-                isPresent(title, entries)
-            }
-            .toSet()
+        val onDisk = entries.mapNotNull { entry ->
+            if (Names.isPartialName(entry.name)) return@mapNotNull null
+            if (entry.isDirectory && !entry.hasPayload) return@mapNotNull null
+            val base = if (entry.isDirectory) entry.name else stripExtension(entry.name)
+            TitleCanonicalizer.matchKey(base).takeIf { it.length >= 2 }
+        }.toSet()
+        if (onDisk.isEmpty()) return emptySet()
+        return catalogTitles.mapNotNull { title ->
+            val wanted = TitleCanonicalizer.matchKey(title)
+            if (wanted.length < 2 || wanted !in onDisk) null else TitleCanonicalizer.identityKey(title)
+        }.toSet()
     }
 
     private fun stripExtension(fileName: String): String {

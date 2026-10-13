@@ -15,6 +15,7 @@ import com.thorfeeds.catalog.net.HttpIdentity
 import com.thorfeeds.catalog.webview.WebFeedGate
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.memory.MemoryCache
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -68,7 +69,13 @@ class ThorFeedsApp : Application(), ImageLoaderFactory {
     }
 
     override fun newImageLoader(): ImageLoader {
-        val builder = ImageLoader.Builder(this).crossfade(true)
+        val builder = ImageLoader.Builder(this)
+            .crossfade(false)
+            .memoryCache {
+                MemoryCache.Builder(this)
+                    .maxSizePercent(0.12)
+                    .build()
+            }
         if (::graph.isInitialized) builder.okHttpClient(graph.imageHttp)
         return builder.build()
     }

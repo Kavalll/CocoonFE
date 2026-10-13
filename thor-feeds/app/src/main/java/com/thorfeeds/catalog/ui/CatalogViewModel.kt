@@ -7,8 +7,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.thorfeeds.catalog.ThorFeedsApp
+import com.thorfeeds.catalog.core.ArtWindow
 import com.thorfeeds.catalog.core.CatalogArt
-import com.thorfeeds.catalog.core.CatalogRow
 import com.thorfeeds.catalog.core.CatalogSort
 import com.thorfeeds.catalog.core.TitleCanonicalizer
 import com.thorfeeds.catalog.download.DownloadRecord
@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     private val graph = ThorFeedsApp.graph(app)
@@ -32,7 +34,9 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val deleteArchiveAfterExtract = graph.library.deleteArchiveAfterExtract.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val catalogSort = graph.library.catalogSort.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CatalogSort.NEWEST)
     val artByTitle = MutableStateFlow<Map<String, CatalogArt>>(emptyMap())
-    private val artRequested = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val artAttempted = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val artPublish = Any()
+    private val artGate = Mutex()
     val onDeviceKeys = graph.library.onDeviceKeys
     val onDeviceArchives = graph.library.onDeviceArchives
     val refreshing = graph.library.refreshing
@@ -45,8 +49,9 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
     val query = MutableStateFlow("")
 
     init {
-        viewModelScope.launch {
-            artByTitle.value = graph.steamArt.cached()
+        viewModelScope.launch(Dispatchers.IO) {
+            val cached = graph.steamArt.cached()
+            publishArt(cached, overwrite = false)
             graph.library.restoreSelection()
         }
     }
@@ -60,22 +65,43 @@ class CatalogViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setCatalogSort(sort: CatalogSort) = launch { graph.library.setCatalogSort(sort) }
 
-    fun ensureArt(rows: List<CatalogRow>) {
-        if (rows.isEmpty()) return
+    fun ensureArt(titles: List<String>) {
+        if (titles.isEmpty()) return
         viewModelScope.launch(Dispatchers.IO) {
-            val requests = rows.map { TitleCanonicalizer.identityKey(it.canonicalTitle) to it.canonicalTitle }
-                .distinctBy { it.first }
-                .filter { (key, _) -> key !in artByTitle.value && artRequested.add(key) }
-            if (requests.isEmpty()) return@launch
-            graph.steamArt.resolve(requests) { key, art ->
-                synchronized(artByTitle) {
-                    artByTitle.value = artByTitle.value + (key to art)
+            artGate.withLock {
+                val requests = titles.map { title -> TitleCanonicalizer.identityKey(title) to title }
+                    .distinctBy { it.first }
+                    .filter { (key, _) -> key !in artByTitle.value && artAttempted.add(key) }
+                for (page in requests.chunked(ArtWindow.PAGE)) {
+                    val batch = linkedMapOf<String, CatalogArt>()
+                    graph.steamArt.resolve(page) { key, art ->
+                        val flush = synchronized(batch) {
+                            batch[key] = art
+                            if (batch.size >= 10) {
+                                val copy = batch.toMap()
+                                batch.clear()
+                                copy
+                            } else {
+                                null
+                            }
+                        }
+                        if (flush != null) publishArt(flush)
+                    }
+                    val rest = synchronized(batch) {
+                        val copy = batch.toMap()
+                        batch.clear()
+                        copy
+                    }
+                    publishArt(rest)
                 }
             }
-            val loaded = artByTitle.value.keys
-            requests.forEach { (key, _) ->
-                if (key !in loaded) artRequested.remove(key)
-            }
+        }
+    }
+
+    private fun publishArt(update: Map<String, CatalogArt>, overwrite: Boolean = true) {
+        if (update.isEmpty()) return
+        synchronized(artPublish) {
+            artByTitle.value = if (overwrite) artByTitle.value + update else update + artByTitle.value
         }
     }
 

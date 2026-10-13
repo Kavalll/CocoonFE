@@ -82,6 +82,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +90,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.thorfeeds.catalog.core.ArtWindow
 import com.thorfeeds.catalog.core.ByteFormat
 import com.thorfeeds.catalog.core.CatalogArt
 import com.thorfeeds.catalog.core.CatalogDeduper
@@ -178,8 +181,12 @@ fun CatalogRoute(
             val sort by vm.catalogSort.collectAsStateWithLifecycle()
             val artByTitle by vm.artByTitle.collectAsState()
             val allRows = remember(entities) { CatalogDeduper.rows(entities.map { it.toParsed() }) }
-            val popularity = remember(artByTitle) {
-                artByTitle.mapNotNull { (key, art) -> art.popularity?.let { key to it } }.toMap()
+            val popularity = remember(artByTitle, sort) {
+                if (sort != CatalogSort.POPULARITY) {
+                    emptyMap()
+                } else {
+                    artByTitle.mapNotNull { (key, art) -> art.popularity?.let { key to it } }.toMap()
+                }
             }
             val rows = remember(allRows, query, sort, popularity) {
                 CatalogOrder.sort(
@@ -189,15 +196,30 @@ fun CatalogRoute(
                 )
             }
             val listState = rememberLazyListState()
-            var artWindow by remember { mutableIntStateOf(ART_PAGE) }
-            LaunchedEffect(sort, query) { artWindow = ART_PAGE }
-            LaunchedEffect(listState, artWindow, rows.size) {
-                snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
-                    .collect { last ->
-                        if (last >= artWindow - 8 && artWindow < rows.size) artWindow += ART_PAGE
-                    }
+            var artWindow by remember { mutableIntStateOf(ArtWindow.PAGE) }
+            var artWindowKey by remember { mutableStateOf(sort to query) }
+            if (artWindowKey != (sort to query)) {
+                artWindowKey = sort to query
+                artWindow = ArtWindow.PAGE
             }
-            LaunchedEffect(artWindow, rows) { vm.ensureArt(rows.take(artWindow)) }
+            val rowCount = rows.size
+            LaunchedEffect(listState, rowCount) {
+                snapshotFlow {
+                    val info = listState.layoutInfo
+                    ArtWindow.Viewport(
+                        lastVisibleIndex = info.visibleItemsInfo.lastOrNull()?.index ?: -1,
+                        visibleCount = info.visibleItemsInfo.size,
+                        heightPx = info.viewportEndOffset - info.viewportStartOffset,
+                    )
+                }.collect { viewport ->
+                    val next = ArtWindow.nextPage(artWindow, rowCount, viewport)
+                    if (next != artWindow) artWindow = next
+                }
+            }
+            val pageTitles = remember(rows, artWindow) {
+                rows.take(artWindow).map { it.canonicalTitle }
+            }
+            LaunchedEffect(pageTitles) { vm.ensureArt(pageTitles) }
             OutlinedTextField(
                 value = query,
                 onValueChange = vm::setQuery,
@@ -244,6 +266,7 @@ fun CatalogRoute(
                 )
                 else -> LazyColumn(
                     state = listState,
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -262,7 +285,9 @@ fun CatalogRoute(
                                 onOpenDetail()
                             },
                             onFocused = {
-                                if (index >= artWindow - 8 && artWindow < rows.size) artWindow += ART_PAGE
+                                if (ArtWindow.focusedIndexRequestsNext(index, artWindow, rows.size)) {
+                                    artWindow = (artWindow + ArtWindow.PAGE).coerceAtMost(rows.size)
+                                }
                                 if (dualScreen) {
                                     vm.select(row.canonicalTitle)
                                     onOpenDetail()
@@ -325,12 +350,20 @@ private fun CatalogCard(
 
 @Composable
 private fun GameArt(title: String, art: CatalogArt?, modifier: Modifier) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val thumbWidth = with(density) { 84.dp.roundToPx() }.coerceAtLeast(1)
+    val thumbHeight = with(density) { 126.dp.roundToPx() }.coerceAtLeast(1)
     Box(modifier.clip(RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))) {
         ArtPlaceholder(title, Modifier.matchParentSize())
         val url = art?.capsuleUrl
         if (url != null) {
             AsyncImage(
-                model = url,
+                model = ImageRequest.Builder(context)
+                    .data(url)
+                    .size(thumbWidth, thumbHeight)
+                    .crossfade(false)
+                    .build(),
                 contentDescription = null,
                 modifier = Modifier.matchParentSize(),
                 contentScale = ContentScale.Crop,
@@ -353,8 +386,6 @@ private fun ArtPlaceholder(title: String, modifier: Modifier) {
         )
     }
 }
-
-private const val ART_PAGE = 50
 
 private fun sortLabel(sort: CatalogSort): String {
     return when (sort) {

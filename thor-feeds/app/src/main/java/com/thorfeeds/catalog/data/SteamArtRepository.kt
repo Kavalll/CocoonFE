@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -30,6 +31,10 @@ class SteamArtRepository(
     private val memory = mutableMapOf<String, ArtEntry>()
     private var loaded = false
     private val steam = http.newBuilder()
+        .dispatcher(Dispatcher().apply {
+            maxRequests = 3
+            maxRequestsPerHost = 3
+        })
         .callTimeout(15, TimeUnit.SECONDS)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -52,15 +57,13 @@ class SteamArtRepository(
                 async(Dispatchers.IO) {
                     gate.withPermit {
                         val found = lookup(title) ?: return@withPermit
-                        lock.withLock {
-                            memory[key] = found
-                            persist()
-                        }
+                        lock.withLock { memory[key] = found }
                         onEach(key, found.toArt())
                     }
                 }
             }.awaitAll()
         }
+        lock.withLock { persist() }
     }
 
     private fun lookup(title: String): ArtEntry? {
